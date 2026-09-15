@@ -40,8 +40,8 @@ export function Header() {
     <header className="sticky top-0 z-40 border-b border-gray-800 bg-gray-950/95 backdrop-blur-sm">
       <div className="mx-auto max-w-6xl px-4">
         <div className="hidden h-16 items-center justify-between gap-6 md:flex">
-          <Link href="/" className="shrink-0 text-xl font-bold text-emerald-400">
-            Quran<span className="text-white">Arena</span>
+          <Link href="/" className="shrink-0">
+            <img src="/logo.svg" alt="QuranArena" className="h-11 w-auto" />
           </Link>
           <div className="flex min-w-0 items-center gap-1 text-sm font-medium">
             <nav className="flex items-center gap-1">
@@ -82,8 +82,8 @@ export function Header() {
 
         <div className="flex flex-col gap-3 py-3 md:hidden">
           <div className="flex items-center justify-between gap-3">
-            <Link href="/" className="shrink-0 text-lg font-bold text-emerald-400">
-              Quran<span className="text-white">Arena</span>
+            <Link href="/" className="shrink-0">
+              <img src="/logo.svg" alt="QuranArena" className="h-9 w-auto" />
             </Link>
             {loading ? (
               <span className="shrink-0 px-3 py-2 text-gray-500">...</span>

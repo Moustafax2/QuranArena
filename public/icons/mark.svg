@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="54" height="54" fill="none">
+  <rect x="14" y="14" width="36" height="36" stroke="#10d992" stroke-width="1.5"></rect>
+  <rect x="14" y="14" width="36" height="36" stroke="#ffffff" stroke-width="1.5" transform="rotate(45 32 32)"></rect>
+  <rect x="23.5" y="23.5" width="17" height="17" stroke="#50927a" stroke-width="1.2"></rect>
+  <rect x="23.5" y="23.5" width="17" height="17" stroke="#50927a" stroke-width="1.2" transform="rotate(45 32 32)"></rect>
+  <circle cx="32" cy="32" r="3.5" fill="#277A5D"></circle>
+</svg>

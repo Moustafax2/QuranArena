@@ -1,4 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="64" fill="#059669"/>
-  <text x="256" y="300" text-anchor="middle" font-size="220" font-family="serif" fill="white">Q</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512">
+  <rect width="64" height="64" rx="15" fill="#0f1f1b"></rect>
+  <rect x="16" y="16" width="32" height="32" fill="none" stroke="#10d992" stroke-width="2"></rect>
+  <rect x="16" y="16" width="32" height="32" fill="none" stroke="#ffffff" stroke-width="2" transform="rotate(45 32 32)"></rect>
+  <rect x="24.5" y="24.5" width="15" height="15" fill="none" stroke="#50927a" stroke-width="1.5"></rect>
+  <rect x="24.5" y="24.5" width="15" height="15" fill="none" stroke="#50927a" stroke-width="1.5" transform="rotate(45 32 32)"></rect>
+  <circle cx="32" cy="32" r="3.5" fill="#277A5D"></circle>
 </svg>
