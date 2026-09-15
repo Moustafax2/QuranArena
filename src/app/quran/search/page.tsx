@@ -56,7 +56,7 @@ export default async function SearchPage({ searchParams }: Props) {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-6 text-2xl font-bold text-gray-900 dark:text-gray-100">
+      <h1 className="mb-6 text-2xl font-bold text-gray-100">
         Search the Quran
       </h1>
 
@@ -76,13 +76,13 @@ export default async function SearchPage({ searchParams }: Props) {
 
       {results && (
         <div className="mt-8">
-          <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+          <p className="mb-4 text-sm text-gray-400">
             {results.pagination.total_records} results for &ldquo;{query}&rdquo;
           </p>
 
           {results.result.navigation.length > 0 && (
             <div className="mb-6">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-400">
                 Quick matches
               </h2>
               <div className="flex flex-wrap gap-2">
@@ -90,7 +90,7 @@ export default async function SearchPage({ searchParams }: Props) {
                   <Link
                     key={`${result.result_type}-${result.key}-${index}`}
                     href={getNavigationHref(result)}
-                    className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 transition-colors hover:border-emerald-500 dark:border-gray-700 dark:text-gray-300 dark:hover:border-emerald-400"
+                    className="rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 transition-colors hover:border-emerald-400"
                   >
                     {stripHtml(result.name)}
                   </Link>
@@ -104,10 +104,10 @@ export default async function SearchPage({ searchParams }: Props) {
                 <Link
                   key={`${result.key}-${index}`}
                   href={getVerseHref(result)}
-                  className="block rounded-lg border border-gray-200 p-4 transition-colors hover:border-emerald-500 dark:border-gray-700 dark:hover:border-emerald-400"
+                  className="block rounded-lg border border-gray-700 p-4 transition-colors hover:border-emerald-400"
                 >
                   <div className="mb-2 flex items-center gap-2">
-                    <span className="rounded bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                    <span className="rounded bg-emerald-900/30 px-2 py-0.5 text-xs font-semibold text-emerald-300">
                       {result.key}
                     </span>
                   </div>
@@ -116,13 +116,13 @@ export default async function SearchPage({ searchParams }: Props) {
                       dir="rtl"
                       lang="ar"
                       translate="no"
-                      className="font-amiri mb-2 text-lg leading-loose text-gray-900 dark:text-gray-100"
+                      className="font-amiri mb-2 text-lg leading-loose text-gray-100"
                     >
                       {stripHtml(result.arabic ?? result.name)}
                     </p>
                   )}
                   {!result.isArabic && (
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                    <p className="text-sm text-gray-400">
                       {stripHtml(result.name)}
                     </p>
                   )}
@@ -135,7 +135,7 @@ export default async function SearchPage({ searchParams }: Props) {
               {currentPage > 1 && (
                 <Link
                   href={`/quran/search?q=${encodeURIComponent(query)}&page=${currentPage - 1}`}
-                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+                  className="rounded-lg border border-gray-700 px-4 py-2 text-sm hover:bg-gray-800"
                 >
                   Previous
                 </Link>
@@ -143,7 +143,7 @@ export default async function SearchPage({ searchParams }: Props) {
               {currentPage < results.pagination.total_pages && (
                 <Link
                   href={`/quran/search?q=${encodeURIComponent(query)}&page=${currentPage + 1}`}
-                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+                  className="rounded-lg border border-gray-700 px-4 py-2 text-sm hover:bg-gray-800"
                 >
                   Next
                 </Link>
@@ -158,7 +158,7 @@ export default async function SearchPage({ searchParams }: Props) {
         !unavailableMessage &&
         !errorMessage &&
         results.pagination.total_records === 0 && (
-        <p className="mt-8 text-center text-gray-500 dark:text-gray-400">
+        <p className="mt-8 text-center text-gray-400">
           No results found for &ldquo;{query}&rdquo;
         </p>
         )}

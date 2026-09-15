@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AlertTriangle, Trash2, Layers, Search, BarChart3, Settings, Check } from "lucide-react";
 import type { UserPreferences, FSRSParameters } from "@/lib/types/flashcard";
 import {
   getPreferences,
@@ -66,8 +67,8 @@ function AlgorithmSwitchModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
       <div className="w-full max-w-lg rounded-2xl border border-amber-800/60 bg-gray-900 p-6 shadow-2xl">
         <div className="mb-4 flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-xl">
-            ⚠️
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-400">
+            <AlertTriangle aria-hidden="true" className="h-5 w-5" />
           </div>
           <h2 className="text-lg font-bold text-white">
             Switch to {toFSRS ? "FSRS" : "SM-2 (Legacy)"}?
@@ -160,65 +161,6 @@ function AlgorithmSwitchModal({
 }
 
 // ──────────────────────────────────────────────────────────────────
-// Optimize warning modal
-// ──────────────────────────────────────────────────────────────────
-
-function OptimizeWarningModal({
-  reviewCount,
-  onConfirm,
-  onCancel,
-}: {
-  reviewCount: number;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
-      <div className="w-full max-w-md rounded-2xl border border-gray-700 bg-gray-900 p-6 shadow-2xl">
-        <div className="mb-4 flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-xl">
-            🧠
-          </div>
-          <h2 className="text-lg font-bold text-white">Before You Optimize</h2>
-        </div>
-        <div className="mb-5 space-y-3 text-sm text-gray-400">
-          <p>
-            You have <strong className="text-emerald-400">{reviewCount} reviews</strong> recorded.
-            Optimization fits the 21 FSRS weight parameters to your personal review history.
-          </p>
-          <div className="rounded-xl border border-gray-700 bg-gray-800 p-4 space-y-2">
-            <p className="font-semibold text-gray-300">Why you shouldn't optimize too often:</p>
-            <ul className="ml-4 list-disc space-y-1.5 text-gray-400">
-              <li>Optimizing on too little data causes <strong className="text-gray-300">overfitting</strong> — the weights fit noise, not your actual memory patterns.</li>
-              <li>The algorithm needs to observe a full forgetting curve for each card, which takes <strong className="text-gray-300">weeks to months</strong> of consistent reviews.</li>
-              <li>Re-optimizing every few days adds no benefit and can actually make scheduling <strong className="text-gray-300">less accurate</strong>.</li>
-              <li>A good rule of thumb: optimize at most <strong className="text-gray-300">once per month</strong>, and only after you have at least a few hundred reviews.</li>
-            </ul>
-          </div>
-          <p className="text-gray-500 text-xs">
-            Recommended: ≥ 1,000 reviews, optimized no more than once per month.
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <button
-            onClick={onCancel}
-            className="flex-1 rounded-xl border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm font-medium text-gray-300 hover:bg-gray-700"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500"
-          >
-            Optimize anyway
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────
 // Reset warning modal
 // ──────────────────────────────────────────────────────────────────
 
@@ -235,8 +177,8 @@ function ResetWarningModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
       <div className="w-full max-w-md rounded-2xl border border-red-900/60 bg-gray-900 p-6 shadow-2xl">
         <div className="mb-4 flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-500/20 text-xl">
-            🗑️
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-500/20 text-red-400">
+            <Trash2 aria-hidden="true" className="h-5 w-5" />
           </div>
           <h2 className="text-lg font-bold text-white">Reset All Flashcard Data?</h2>
         </div>
@@ -300,9 +242,6 @@ export default function SettingsPage() {
   const [algoSwitchTarget, setAlgoSwitchTarget] = useState<"fsrs" | "sm2" | null>(null);
   const [showAlgoSection, setShowAlgoSection] = useState(false);
 
-  // Optimize warning
-  const [showOptimizeWarning, setShowOptimizeWarning] = useState(false);
-
   // Reset warning
   const [showResetWarning, setShowResetWarning] = useState(false);
 
@@ -342,7 +281,7 @@ export default function SettingsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `qalamspace-backup-${Date.now()}.json`;
+    a.download = `quranarena-backup-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -398,20 +337,6 @@ export default function SettingsPage() {
         />
       )}
 
-      {/* Optimize warning modal */}
-      {showOptimizeWarning && (
-        <OptimizeWarningModal
-          reviewCount={reviewCount}
-          onConfirm={() => {
-            setShowOptimizeWarning(false);
-            // Optimization is not yet implemented server-side.
-            // Placeholder: alert user.
-            alert("Optimization will be available in a future update. Keep reviewing to build up your history!");
-          }}
-          onCancel={() => setShowOptimizeWarning(false)}
-        />
-      )}
-
       <div className="mx-auto max-w-4xl">
         <div className="mb-8">
           <h1 className="mb-2 text-3xl font-bold text-white">Settings</h1>
@@ -422,7 +347,7 @@ export default function SettingsPage() {
           {/* ── Card Display ───────────────────────────────────────── */}
           <div className="rounded-2xl border border-gray-800 bg-gray-900 p-6">
             <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-white">
-              <span>🎴</span> Card Display
+              <Layers aria-hidden="true" className="h-5 w-5 text-gray-400" /> Card Display
             </h2>
             <div className="space-y-4">
               {(
@@ -448,7 +373,7 @@ export default function SettingsPage() {
           {/* ── Word Filtering ─────────────────────────────────────── */}
           <div className="rounded-2xl border border-gray-800 bg-gray-900 p-6">
             <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-white">
-              <span>🔍</span> Word Filtering
+              <Search aria-hidden="true" className="h-5 w-5 text-gray-400" /> Word Filtering
             </h2>
             <div className="space-y-4">
               <label className="flex items-center justify-between">
@@ -469,7 +394,7 @@ export default function SettingsPage() {
           {/* ── Learning Limits ────────────────────────────────────── */}
           <div className="rounded-2xl border border-gray-800 bg-gray-900 p-6">
             <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-white">
-              <span>📊</span> Learning Limits
+              <BarChart3 aria-hidden="true" className="h-5 w-5 text-gray-400" /> Learning Limits
             </h2>
             <div className="space-y-6">
               {(
@@ -500,7 +425,7 @@ export default function SettingsPage() {
               className="flex w-full items-center justify-between text-left"
             >
               <h2 className="flex items-center gap-2 text-lg font-semibold text-white">
-                <span>⚙️</span> Advanced
+                <Settings aria-hidden="true" className="h-5 w-5 text-gray-400" /> Advanced
               </h2>
               <span
                 className="text-gray-400 transition-transform duration-200"
@@ -592,30 +517,14 @@ export default function SettingsPage() {
 
                     {/* Model Weights */}
                     <div>
-                      <div className="mb-3 flex items-center justify-between">
-                        <div>
-                          <div className="flex items-center text-sm text-gray-300">
-                            Model weights (w)
-                            <InfoTip text="The 21 parameters that define your personal forgetting curve. The defaults work well for most people. After accumulating enough review history, the Optimize button fits these to YOUR memory patterns, improving scheduling accuracy." />
-                          </div>
-                          <div className="mt-0.5 text-xs text-gray-500">
-                            {reviewCount} reviews recorded
-                          </div>
+                      <div className="mb-3">
+                        <div className="flex items-center text-sm text-gray-300">
+                          Model weights (w)
+                          <InfoTip text="The 21 parameters that define your personal forgetting curve. The defaults work well for most people." />
                         </div>
-                        <button
-                          onClick={() => setShowOptimizeWarning(true)}
-                          disabled={reviewCount < 100}
-                          title={
-                            reviewCount < 100
-                              ? `Need ${100 - reviewCount} more reviews before optimizing`
-                              : "Optimize weights based on your review history"
-                          }
-                          className="rounded-lg border border-emerald-700 px-3 py-1.5 text-xs font-medium text-emerald-400 transition-all hover:border-emerald-500 hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:border-gray-700 disabled:text-gray-600"
-                        >
-                          {reviewCount < 100
-                            ? `Optimize (${reviewCount}/100)`
-                            : "Optimize"}
-                        </button>
+                        <div className="mt-0.5 text-xs text-gray-500">
+                          {reviewCount} reviews recorded
+                        </div>
                       </div>
                       <div className="grid grid-cols-7 gap-1">
                         {fsrsParams.w.map((val, i) => (
@@ -645,8 +554,9 @@ export default function SettingsPage() {
                     </button>
                   ) : (
                     <div className="space-y-3">
-                      <p className="text-xs text-amber-400/80">
-                        ⚠️ Switching algorithms resets scheduling data. Read the warning carefully before confirming.
+                      <p className="flex items-start gap-1.5 text-xs text-amber-400/80">
+                        <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5 shrink-0 translate-y-0.5" />
+                        Switching algorithms resets scheduling data. Read the warning carefully before confirming.
                       </p>
                       <div className="grid grid-cols-2 gap-3">
                         <button
@@ -660,7 +570,9 @@ export default function SettingsPage() {
                           <div className="mb-1 font-semibold text-white">
                             FSRS
                             {prefs.algorithm === "fsrs" && (
-                              <span className="ml-2 text-xs text-emerald-400">✓ Active</span>
+                              <span className="ml-2 inline-flex items-center gap-0.5 text-xs text-emerald-400">
+                                <Check aria-hidden="true" className="h-3 w-3" /> Active
+                              </span>
                             )}
                           </div>
                           <div className="text-xs text-gray-400">
@@ -678,7 +590,9 @@ export default function SettingsPage() {
                           <div className="mb-1 font-semibold text-white">
                             SM-2 <span className="text-xs font-normal text-gray-500">(Legacy)</span>
                             {prefs.algorithm === "sm2" && (
-                              <span className="ml-2 text-xs text-amber-400">✓ Active</span>
+                              <span className="ml-2 inline-flex items-center gap-0.5 text-xs text-amber-400">
+                                <Check aria-hidden="true" className="h-3 w-3" /> Active
+                              </span>
                             )}
                           </div>
                           <div className="text-xs text-gray-400">
@@ -723,14 +637,20 @@ export default function SettingsPage() {
               onClick={handleSave}
               className="flex-1 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 px-6 py-3 font-semibold text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl"
             >
-              {saved ? "✓ Saved!" : "Save Settings"}
+              {saved ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Check aria-hidden="true" className="h-4 w-4" /> Saved!
+                </span>
+              ) : (
+                "Save Settings"
+              )}
             </button>
           </div>
 
           {/* ── Danger Zone ────────────────────────────────────────── */}
           <div className="rounded-2xl border border-red-900/40 bg-red-950/10 p-6">
             <h2 className="mb-1 flex items-center gap-2 text-lg font-semibold text-red-400">
-              <span>⚠️</span> Danger Zone
+              <AlertTriangle aria-hidden="true" className="h-5 w-5" /> Danger Zone
             </h2>
             <p className="mb-4 text-sm text-gray-500">
               These actions are permanent and cannot be undone.

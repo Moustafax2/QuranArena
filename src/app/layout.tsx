@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Amiri } from "next/font/google";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
@@ -21,11 +21,29 @@ const amiri = Amiri({
   weight: ["400", "700"],
 });
 
+const description =
+  "Compete with friends to memorize the Quran. Live multiplayer competitions and training modes.";
+
 export const metadata: Metadata = {
   title: "QuranArena",
-  description:
-    "Compete with friends to memorize the Quran. Live multiplayer competitions and training modes.",
+  description,
   manifest: "/manifest.json",
+  openGraph: {
+    title: "QuranArena",
+    description,
+    siteName: "QuranArena",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "QuranArena",
+    description,
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#10d992",
+  colorScheme: "dark",
 };
 
 export default function RootLayout({

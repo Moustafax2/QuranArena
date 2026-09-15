@@ -20,5 +20,4 @@ export async function addDemoCards(): Promise<void> {
   });
 
   await Promise.all(promises);
-  console.log("✓ Added 5 demo cards to your deck!");
 }

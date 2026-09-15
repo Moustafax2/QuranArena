@@ -532,7 +532,7 @@ export default function FriendsPage() {
               <div className="mt-4 space-y-3">
                 {renderUserList(
                   friends,
-                  "You haven&apos;t added any friends yet. Search above to send your first request.",
+                  "You haven't added any friends yet. Search above to send your first request.",
                   "Loading friends..."
                 )}
               </div>

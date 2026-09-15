@@ -115,7 +115,7 @@ export default function AccountPage() {
       <section className="mt-4 rounded-2xl border border-gray-800 bg-gray-900 p-5">
         <h2 className="text-lg font-semibold">Social</h2>
         <p className="mt-2 text-sm text-gray-400">
-          Manage your Quran.com friends list and incoming game invitations.
+          Manage your QuranArena friends list and incoming game invitations.
         </p>
         <Link
           href="/friends"

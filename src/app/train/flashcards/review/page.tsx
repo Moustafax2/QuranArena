@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { PartyPopper, Flag, Trash2 } from "lucide-react";
 import { FlashcardReview } from "@/components/flashcard/FlashcardReview";
 import type { FlashcardSession, Rating, FSRSCard } from "@/lib/types/flashcard";
 import {
@@ -89,7 +90,6 @@ export default function ReviewPage() {
         setMuyassarAvailable(false);
         const word = await getWordById(card.word_id);
         if (word) setCurrentWord(word);
-        else console.error(`Word not found for id: ${card.word_id}`);
       } else {
         setCurrentWord(null);
       }
@@ -190,7 +190,7 @@ export default function ReviewPage() {
       <div className="min-h-screen bg-gray-950 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <div className="mb-8 text-center">
-            <div className="mb-4 text-6xl">🎉</div>
+            <PartyPopper aria-hidden="true" className="mx-auto mb-4 h-14 w-14 text-emerald-400" />
             <h1 className="mb-2 text-3xl font-bold text-white">Session Complete!</h1>
             <p className="text-gray-400">Great work on your review session</p>
           </div>
@@ -230,8 +230,9 @@ export default function ReviewPage() {
             </div>
 
             {flaggedWords.size > 0 && (
-              <div className="rounded-2xl border border-yellow-800/40 bg-yellow-950/30 p-4 text-sm text-yellow-300">
-                ⚑ {flaggedWords.size} word{flaggedWords.size !== 1 ? "s" : ""} flagged for translation review
+              <div className="flex items-center gap-2 rounded-2xl border border-yellow-800/40 bg-yellow-950/30 p-4 text-sm text-yellow-300">
+                <Flag aria-hidden="true" className="h-4 w-4 shrink-0" />
+                {flaggedWords.size} word{flaggedWords.size !== 1 ? "s" : ""} flagged for translation review
               </div>
             )}
 
@@ -316,7 +317,7 @@ export default function ReviewPage() {
                       onClick={() => setConfirmDelete(true)}
                       className="flex w-full items-center gap-2 px-4 py-2 text-sm text-red-400 transition-colors hover:bg-red-500/10"
                     >
-                      <span>🗑</span>
+                      <Trash2 aria-hidden="true" className="h-4 w-4" />
                       <span>Delete card</span>
                     </button>
                   )}
@@ -336,7 +337,7 @@ export default function ReviewPage() {
                   : "border-gray-700 bg-gray-900 text-gray-500 hover:border-yellow-500/40 hover:text-yellow-400"
               }`}
             >
-              <span>{isFlagged ? "⚑" : "⚐"}</span>
+              <Flag aria-hidden="true" className="h-4 w-4" fill={isFlagged ? "currentColor" : "none"} />
               <span>{justFlagged ? "Flagged!" : isFlagged ? "Flagged" : "Flag"}</span>
             </button>
 

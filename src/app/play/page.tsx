@@ -2,75 +2,57 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Target, BookOpen, PenLine, Brain, Check, type LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { CHAPTERS_DATA } from "@/lib/data/chapters-data";
 import { UserInvitePicker } from "@/components/social/UserInvitePicker";
 import type { SocialUserSummary } from "@/lib/social/qf-users";
+import { DIFFICULTY_COLORS, type Difficulty } from "@/lib/ui/colors";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type GameModeId = "multiple-choice" | "word-meaning" | "fill-in-blank" | "buzzer" | "trivia";
+type GameModeId = "multiple-choice" | "word-meaning" | "fill-in-blank" | "trivia";
 type ScopeType = "all" | "juz" | "surah";
 
 const GAME_MODES: {
   id: GameModeId;
   title: string;
   short: string;
-  difficulty: string;
-  difficultyColor: string;
+  difficulty: Difficulty;
   description: string;
-  icon: string;
-  available: boolean;
+  icon: LucideIcon;
 }[] = [
   {
     id: "multiple-choice",
     title: "Next Ayah — Multiple Choice",
     short: "Multiple Choice",
     difficulty: "Easy",
-    difficultyColor: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20",
     description: "Given a verse, pick the correct next ayah from four options.",
-    icon: "🎯",
-    available: true,
+    icon: Target,
   },
   {
     id: "word-meaning",
     title: "Word Meaning",
     short: "Word Meaning",
     difficulty: "Medium",
-    difficultyColor: "text-amber-400 bg-amber-400/10 border-amber-400/20",
     description: "A word from an ayah appears — race to select the correct meaning.",
-    icon: "📖",
-    available: true,
+    icon: BookOpen,
   },
   {
     id: "fill-in-blank",
     title: "Fill in the Blank",
     short: "Fill Blank",
     difficulty: "Medium",
-    difficultyColor: "text-blue-400 bg-blue-400/10 border-blue-400/20",
     description: "A word is blanked out from an ayah — pick the missing word.",
-    icon: "✏️",
-    available: true,
+    icon: PenLine,
   },
   {
     id: "trivia",
     title: "Quran Trivia",
     short: "Trivia",
     difficulty: "Easy",
-    difficultyColor: "text-purple-400 bg-purple-400/10 border-purple-400/20",
     description: "Test your general knowledge about the Quran — surahs, prophets, history, and more.",
-    icon: "🧠",
-    available: true,
-  },
-  {
-    id: "buzzer",
-    title: "Buzzer — Next Ayah",
-    short: "Buzzer",
-    difficulty: "Hard",
-    difficultyColor: "text-red-400 bg-red-400/10 border-red-400/20",
-    description: "An ayah is read aloud. First to buzz in and recite the next one wins the point.",
-    icon: "⚡",
-    available: false,
+    icon: Brain,
   },
 ];
 
@@ -115,8 +97,6 @@ export default function PlayPage() {
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   function toggleMode(id: GameModeId) {
-    const mode = GAME_MODES.find((m) => m.id === id);
-    if (!mode?.available) return;
     setSelectedModes((prev) =>
       prev.includes(id)
         ? prev.length > 1 ? prev.filter((m) => m !== id) : prev // keep at least one
@@ -275,39 +255,29 @@ export default function PlayPage() {
               <div className="grid gap-3 sm:grid-cols-2">
                 {GAME_MODES.map((mode) => {
                   const active = selectedModes.includes(mode.id);
+                  const Icon = mode.icon;
                   return (
                     <button
                       key={mode.id}
                       onClick={() => toggleMode(mode.id)}
-                      disabled={!mode.available}
-                      className={`relative flex flex-col gap-2 rounded-xl border p-4 text-left transition-all ${
-                        !mode.available
-                          ? "cursor-not-allowed border-gray-800 opacity-40"
-                          : active
+                      className={`flex flex-col gap-2 rounded-xl border p-4 text-left transition-all ${
+                        active
                           ? "border-emerald-500 bg-emerald-500/10 ring-1 ring-emerald-500"
                           : "border-gray-700 bg-gray-800 hover:border-gray-600"
                       }`}
                     >
-                      {!mode.available && (
-                        <span className="absolute right-3 top-3 rounded-full border border-gray-700 bg-gray-800 px-2 py-0.5 text-xs text-gray-500">
-                          Soon
-                        </span>
-                      )}
                       <div className="flex items-center gap-2">
-                        <span className="text-xl">{mode.icon}</span>
+                        <Icon aria-hidden="true" className="h-5 w-5 text-gray-300" />
                         <span className="font-medium text-white">{mode.short}</span>
                         <span
-                          className={`ml-auto rounded-full border px-2 py-0.5 text-xs font-medium ${mode.difficultyColor}`}
+                          className={`ml-auto flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${DIFFICULTY_COLORS[mode.difficulty]}`}
                         >
+                          {active && <Check aria-hidden="true" className="h-3 w-3" />}
                           {mode.difficulty}
+                          {active && <span className="sr-only">, selected</span>}
                         </span>
                       </div>
                       <p className="text-xs leading-relaxed text-gray-400">{mode.description}</p>
-                      {active && mode.available && (
-                        <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-xs text-white">
-                          ✓
-                        </span>
-                      )}
                     </button>
                   );
                 })}
