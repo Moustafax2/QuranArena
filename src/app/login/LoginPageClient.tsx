@@ -78,6 +78,11 @@ export default function LoginPageClient({
             </div>
           )}
 
+          <p className="mt-6 text-sm leading-6 text-gray-400">
+            Review our <Link href="/privacy" className="text-emerald-400 underline">Privacy Policy</Link> and{" "}
+            <Link href="/terms" className="text-emerald-400 underline">Terms of Service</Link> before connecting your account.
+          </p>
+
           <button
             onClick={() => void handleLogin()}
             disabled={loading}
