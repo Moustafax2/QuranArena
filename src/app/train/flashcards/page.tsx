@@ -2,6 +2,20 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import {
+  BookOpen,
+  RefreshCw,
+  ScrollText,
+  Library,
+  Type,
+  AlertTriangle,
+  Flame,
+  Settings,
+  BarChart3,
+  TrendingUp,
+  FolderOpen,
+  ChevronLeft,
+} from "lucide-react";
 import { getFlashcards, getReviewLog, migrateFromLocalStorage } from "@/lib/storage/flashcard-storage-supabase";
 import { getDueCardsCount, getNewCardsCount } from "@/lib/flashcard/session-manager";
 import type { ReviewLogEntry } from "@/lib/types/flashcard";
@@ -19,7 +33,7 @@ function HowItWorksModal({ onClose }: { onClose: () => void }) {
         <div className="space-y-4 text-sm text-gray-300">
           <div className="rounded-xl border border-gray-700 bg-gray-800 p-5">
             <div className="mb-2 flex items-center gap-2">
-              <span className="text-lg">📖</span>
+              <BookOpen aria-hidden="true" className="h-5 w-5 text-emerald-400" />
               <p className="font-semibold text-white">Adding words from a Surah</p>
             </div>
             <p className="leading-relaxed">
@@ -32,7 +46,7 @@ function HowItWorksModal({ onClose }: { onClose: () => void }) {
 
           <div className="rounded-xl border border-gray-700 bg-gray-800 p-5">
             <div className="mb-2 flex items-center gap-2">
-              <span className="text-lg">🔄</span>
+              <RefreshCw aria-hidden="true" className="h-5 w-5 text-emerald-400" />
               <p className="font-semibold text-white">Reviewing a card</p>
             </div>
             <p className="mb-3 leading-relaxed">
@@ -70,7 +84,7 @@ function HowItWorksModal({ onClose }: { onClose: () => void }) {
         <div className="space-y-4 text-sm text-gray-300">
           <div className="rounded-xl border border-teal-500/20 bg-teal-500/5 p-5">
             <div className="mb-2 flex items-center gap-2">
-              <span className="text-lg">📜</span>
+              <ScrollText aria-hidden="true" className="h-5 w-5 text-teal-400" />
               <p className="font-semibold text-white">Muyassar Gharib</p>
             </div>
             <p className="leading-relaxed">
@@ -85,7 +99,7 @@ function HowItWorksModal({ onClose }: { onClose: () => void }) {
 
           <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-5">
             <div className="mb-2 flex items-center gap-2">
-              <span className="text-lg">📚</span>
+              <Library aria-hidden="true" className="h-5 w-5 text-amber-400" />
               <p className="font-semibold text-white">Hans Wehr Dictionary</p>
             </div>
             <p className="leading-relaxed">
@@ -106,7 +120,7 @@ function HowItWorksModal({ onClose }: { onClose: () => void }) {
         <div className="text-sm text-gray-300">
           <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-5">
             <div className="mb-3 flex items-center gap-2">
-              <span className="text-lg">🔤</span>
+              <Type aria-hidden="true" className="h-5 w-5 text-purple-400" />
               <p className="font-semibold text-white">Basic Sarf knowledge helps</p>
             </div>
             <p className="mb-4 leading-relaxed">
@@ -148,7 +162,7 @@ function HowItWorksModal({ onClose }: { onClose: () => void }) {
         <div className="text-sm text-gray-300">
           <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-5">
             <div className="mb-3 flex items-center gap-2">
-              <span className="text-lg">⚠️</span>
+              <AlertTriangle aria-hidden="true" className="h-5 w-5 text-rose-400" />
               <p className="font-semibold text-white">Translations may not always be perfect</p>
             </div>
             <p className="mb-4 text-base font-semibold text-rose-300 leading-snug">
@@ -408,7 +422,7 @@ export default function FlashcardsHubPage() {
       <div className="mx-auto max-w-4xl">
         {!authLoading && !isAuthenticated && (
           <div className="mb-6 flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
-            <span>⚠️</span>
+            <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0" />
             <span>
               Your progress is saved on this device only.{" "}
               <Link href="/login?next=/train/flashcards" className="underline hover:text-amber-200">
@@ -428,7 +442,8 @@ export default function FlashcardsHubPage() {
           <div className="mb-4 flex items-center justify-center gap-3">
             {streak > 0 && (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-500/40 bg-orange-500/10 px-4 py-1.5 text-sm font-semibold text-orange-400">
-                🔥 {streak} day streak
+                <Flame aria-hidden="true" className="h-4 w-4" />
+                {streak} day streak
               </span>
             )}
             <button
@@ -466,7 +481,7 @@ export default function FlashcardsHubPage() {
                 href="/train/flashcards/select"
                 className="group relative overflow-hidden rounded-3xl border border-blue-500/30 bg-gradient-to-br from-blue-600 to-blue-700 p-8 shadow-xl transition-all hover:scale-105 hover:shadow-2xl hover:shadow-blue-500/20"
               >
-                <div className="absolute right-4 top-4 text-6xl opacity-20">📖</div>
+                <BookOpen aria-hidden="true" className="absolute right-4 top-4 h-16 w-16 text-white opacity-20" />
                 <div className="relative">
                   <div className="mb-2 text-sm font-medium text-blue-200">
                     Learn New Words
@@ -498,7 +513,7 @@ export default function FlashcardsHubPage() {
           </>
         ) : (
           <div className="mb-8 text-center">
-            <div className="mb-6 text-6xl">📚</div>
+            <Library aria-hidden="true" className="mx-auto mb-6 h-16 w-16 text-gray-700" />
             <h2 className="mb-3 text-2xl font-bold text-white">
               Start Your Journey
             </h2>
@@ -521,7 +536,7 @@ export default function FlashcardsHubPage() {
             href="/train/flashcards/settings"
             className="flex items-center gap-3 rounded-xl border border-gray-800 bg-gray-900 p-4 transition-all hover:border-gray-700 hover:bg-gray-800"
           >
-            <div className="text-2xl">⚙️</div>
+            <Settings aria-hidden="true" className="h-6 w-6 text-gray-400" />
             <div>
               <div className="font-medium text-white">Settings</div>
               <div className="text-sm text-gray-500">Customize your learning</div>
@@ -531,7 +546,7 @@ export default function FlashcardsHubPage() {
             href="/train/flashcards/stats"
             className="flex items-center gap-3 rounded-xl border border-gray-800 bg-gray-900 p-4 transition-all hover:border-gray-700 hover:bg-gray-800"
           >
-            <div className="text-2xl">📊</div>
+            <BarChart3 aria-hidden="true" className="h-6 w-6 text-gray-400" />
             <div>
               <div className="font-medium text-white">Statistics</div>
               <div className="text-sm text-gray-500">View your progress</div>
@@ -541,7 +556,7 @@ export default function FlashcardsHubPage() {
             href="/progress"
             className="flex items-center gap-3 rounded-xl border border-gray-800 bg-gray-900 p-4 transition-all hover:border-gray-700 hover:bg-gray-800"
           >
-            <div className="text-xl font-semibold text-emerald-300">GP</div>
+            <TrendingUp aria-hidden="true" className="h-6 w-6 text-emerald-300" />
             <div>
               <div className="font-medium text-white">Global Progress</div>
               <div className="text-sm text-gray-500">See every mode together</div>
@@ -551,7 +566,7 @@ export default function FlashcardsHubPage() {
             href="/train/flashcards/browse"
             className="flex items-center gap-3 rounded-xl border border-gray-800 bg-gray-900 p-4 transition-all hover:border-gray-700 hover:bg-gray-800"
           >
-            <div className="text-2xl">🗂️</div>
+            <FolderOpen aria-hidden="true" className="h-6 w-6 text-gray-400" />
             <div>
               <div className="font-medium text-white">Browse Deck</div>
               <div className="text-sm text-gray-500">View all your cards</div>
@@ -561,7 +576,7 @@ export default function FlashcardsHubPage() {
             href="/train"
             className="flex items-center gap-3 rounded-xl border border-gray-800 bg-gray-900 p-4 transition-all hover:border-gray-700 hover:bg-gray-800"
           >
-            <div className="text-2xl">◀️</div>
+            <ChevronLeft aria-hidden="true" className="h-6 w-6 text-gray-400" />
             <div>
               <div className="font-medium text-white">Back to Training</div>
               <div className="text-sm text-gray-500">Other training modes</div>

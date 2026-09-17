@@ -57,7 +57,7 @@ export default function SelectSurahPage() {
                         : "bg-emerald-500/20 text-emerald-400"
                     }`}
                   >
-                    {chapter.revelation_place === "makkah" ? "🕋" : "🕌"}
+                    {chapter.revelation_place === "makkah" ? "Meccan" : "Medinan"}
                   </span>
                 </div>
               </div>

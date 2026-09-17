@@ -427,7 +427,6 @@ export async function migrateFromLocalStorage(): Promise<boolean> {
     );
 
     localStorage.setItem(STORAGE_KEYS.MIGRATED, "true");
-    console.log("Migrated localStorage flashcard data to Supabase.");
     return true;
   } catch (error) {
     console.error("Failed to migrate from localStorage:", error);

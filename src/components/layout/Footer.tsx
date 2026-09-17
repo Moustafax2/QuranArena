@@ -8,7 +8,7 @@ export function Footer() {
             href="https://quran.foundation"
             target="_blank"
             rel="noopener noreferrer"
-            className="underline hover:text-emerald-600"
+            className="underline hover:text-emerald-400"
           >
             Quran Foundation Content API
           </a>

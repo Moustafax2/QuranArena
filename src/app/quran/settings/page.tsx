@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { getQuranIntegrationStatus } from "@/lib/quran/status";
+import { isDevAuthEnabled } from "@/lib/qf-user/dev-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +39,10 @@ function PresenceBadge({ present }: { present: boolean }) {
 }
 
 export default async function QuranSettingsPage() {
+  if (!isDevAuthEnabled()) {
+    notFound();
+  }
+
   const status = await getQuranIntegrationStatus();
 
   return (

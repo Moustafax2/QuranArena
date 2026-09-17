@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 208 64" width="208" height="64" fill="none">
+  <g>
+    <rect x="9" y="9" width="30" height="30" stroke="#10d992" stroke-width="1.5" transform="translate(0 8)"></rect>
+    <rect x="9" y="9" width="30" height="30" stroke="#ffffff" stroke-width="1.5" transform="translate(0 8) rotate(45 24 24)"></rect>
+    <rect x="16.9" y="16.9" width="14.2" height="14.2" stroke="#50927a" stroke-width="1.2" transform="translate(0 8)"></rect>
+    <rect x="16.9" y="16.9" width="14.2" height="14.2" stroke="#50927a" stroke-width="1.2" transform="translate(0 8) rotate(45 24 24)"></rect>
+    <circle cx="24" cy="32" r="2.9" fill="#277A5D"></circle>
+  </g>
+  <text x="53" y="38" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="800" letter-spacing="-1.87" fill="#10d992">Quran</text>
+  <text x="54" y="53" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" letter-spacing="1.56" fill="#ffffff">ARENA</text>
+</svg>

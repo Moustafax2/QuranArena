@@ -2,6 +2,7 @@
 
 import { useDeferredValue, useEffect, useState } from "react";
 import type { SocialUserSummary } from "@/lib/social/qf-users";
+import { DANGER_SUBTLE } from "@/lib/ui/colors";
 
 interface UserInvitePickerProps {
   selectedUsers: SocialUserSummary[];
@@ -175,7 +176,7 @@ export function UserInvitePicker({
       )}
 
       {error && (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+        <div className={`rounded-xl border px-4 py-3 text-sm ${DANGER_SUBTLE}`}>
           {error}
         </div>
       )}

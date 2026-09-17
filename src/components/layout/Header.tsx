@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { Spinner } from "@/components/ui/Spinner";
 
 const navLinks = [
   { href: "/play", label: "Play" },
@@ -12,6 +13,33 @@ const navLinks = [
   { href: "/quran", label: "Quran" },
 ];
 
+function NavLink({
+  href,
+  active,
+  mobile = false,
+  className = "",
+  children,
+}: {
+  href: string;
+  active: boolean;
+  mobile?: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`rounded-lg px-3 py-2 transition-colors ${
+        active
+          ? "bg-emerald-600/20 text-emerald-400"
+          : "text-gray-400 hover:bg-gray-800 hover:text-gray-100"
+      } ${mobile ? "shrink-0 whitespace-nowrap" : ""} ${className}`}
+    >
+      {children}
+    </Link>
+  );
+}
+
 export function Header() {
   const pathname = usePathname();
   const { isAuthenticated, loading, player, logout } = useAuth();
@@ -20,19 +48,10 @@ export function Header() {
   const renderNavLinks = (mobile = false) =>
     navLinks.map(({ href, label }) => {
       const active = pathname === href || pathname.startsWith(href + "/");
-
       return (
-        <Link
-          key={href}
-          href={href}
-          className={`rounded-lg px-3 py-2 transition-colors ${
-            active
-              ? "bg-emerald-600/20 text-emerald-400"
-              : "text-gray-400 hover:bg-gray-800 hover:text-gray-100"
-          } ${mobile ? "shrink-0 whitespace-nowrap" : ""}`}
-        >
+        <NavLink key={href} href={href} active={active} mobile={mobile}>
           {label}
-        </Link>
+        </NavLink>
       );
     });
 
@@ -40,28 +59,26 @@ export function Header() {
     <header className="sticky top-0 z-40 border-b border-gray-800 bg-gray-950/95 backdrop-blur-sm">
       <div className="mx-auto max-w-6xl px-4">
         <div className="hidden h-16 items-center justify-between gap-6 md:flex">
-          <Link href="/" className="shrink-0 text-xl font-bold text-emerald-400">
-            Quran<span className="text-white">Arena</span>
+          <Link href="/" className="shrink-0">
+            <img src="/logo.svg" alt="QuranArena" className="h-11 w-auto" />
           </Link>
           <div className="flex min-w-0 items-center gap-1 text-sm font-medium">
             <nav className="flex items-center gap-1">
               {renderNavLinks()}
             </nav>
             {loading ? (
-              <span className="px-3 py-2 text-gray-500">...</span>
+              <span className="flex px-3 py-2 text-gray-500">
+                <Spinner size="sm" />
+              </span>
             ) : isAuthenticated && player ? (
               <>
-                <Link
+                <NavLink
                   href="/account"
-                  className={`max-w-40 truncate rounded-lg px-3 py-2 transition-colors ${
-                    pathname === "/account"
-                      ? "bg-emerald-600/20 text-emerald-400"
-                      : "text-gray-400 hover:bg-gray-800 hover:text-gray-100"
-                  }`}
-                  title={player.display_name}
+                  active={pathname === "/account"}
+                  className="max-w-40 truncate"
                 >
-                  {player.display_name}
-                </Link>
+                  <span title={player.display_name}>{player.display_name}</span>
+                </NavLink>
                 <button
                   onClick={() => void logout()}
                   className="rounded-lg px-3 py-2 text-gray-400 transition-colors hover:bg-gray-800 hover:text-gray-100"
@@ -82,22 +99,17 @@ export function Header() {
 
         <div className="flex flex-col gap-3 py-3 md:hidden">
           <div className="flex items-center justify-between gap-3">
-            <Link href="/" className="shrink-0 text-lg font-bold text-emerald-400">
-              Quran<span className="text-white">Arena</span>
+            <Link href="/" className="shrink-0">
+              <img src="/logo.svg" alt="QuranArena" className="h-9 w-auto" />
             </Link>
             {loading ? (
-              <span className="shrink-0 px-3 py-2 text-gray-500">...</span>
+              <span className="flex shrink-0 px-3 py-2 text-gray-500">
+                <Spinner size="sm" />
+              </span>
             ) : isAuthenticated && player ? (
-              <Link
-                href="/account"
-                className={`shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  pathname === "/account"
-                    ? "bg-emerald-600/20 text-emerald-400"
-                    : "text-gray-400 hover:bg-gray-800 hover:text-gray-100"
-                }`}
-              >
+              <NavLink href="/account" active={pathname === "/account"} className="shrink-0 text-sm">
                 Account
-              </Link>
+              </NavLink>
             ) : (
               <Link
                 href={loginHref}

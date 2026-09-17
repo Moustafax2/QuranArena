@@ -1,11 +1,11 @@
 {
-  "name": "Quran Reader",
-  "short_name": "Quran",
-  "description": "A beautiful Quran reader with Arabic text, translations, and audio recitations.",
+  "name": "QuranArena",
+  "short_name": "QuranArena",
+  "description": "Compete with friends to memorize the Quran. Live multiplayer competitions and training modes.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#059669",
+  "background_color": "#0f1f1b",
+  "theme_color": "#10d992",
   "icons": [
     {
       "src": "/icons/icon-192.svg",

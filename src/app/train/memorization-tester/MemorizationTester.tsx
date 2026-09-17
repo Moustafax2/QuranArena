@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { Trash2, FileText, Search } from "lucide-react";
 import { CHAPTERS_DATA } from "@/lib/data/chapters-data";
 import {
   clearAllRecords,
@@ -56,8 +57,8 @@ function HeatmapResetModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
       <div className="w-full max-w-md rounded-2xl border border-red-900/60 bg-gray-900 p-6 shadow-2xl">
         <div className="mb-4 flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-500/20 text-xl">
-            🗑️
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-500/20 text-red-400">
+            <Trash2 aria-hidden="true" className="h-5 w-5" />
           </div>
           <h2 className="text-lg font-bold text-white">Reset Heatmap Data?</h2>
         </div>
@@ -319,7 +320,7 @@ export function MemorizationTester() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, [phase, resetTestingView]);
 
-  const pageClass = "bg-black text-white";
+  const pageClass = "text-white";
   const cardClass = "border-gray-800 bg-gray-900";
   const mutedTextClass = "text-gray-400";
   const subtleTextClass = "text-gray-500";
@@ -330,7 +331,7 @@ export function MemorizationTester() {
 
   if (phase === "setup") {
     return (
-      <div className={`mx-auto max-w-3xl rounded-3xl px-4 py-10 ${pageClass}`}>
+      <div className={`mx-auto max-w-3xl px-4 py-10 ${pageClass}`}>
         {showHeatmapReset && (
           <HeatmapResetModal
             onConfirm={() => {
@@ -363,7 +364,13 @@ export function MemorizationTester() {
                     : "border-gray-700 bg-gray-900 hover:border-gray-600"
                 }`}
               >
-                <div className="text-lg mb-1">{m === "page-blank" ? "📄" : "🔍"}</div>
+                <div className="mb-1">
+                  {m === "page-blank" ? (
+                    <FileText aria-hidden="true" className="h-5 w-5" />
+                  ) : (
+                    <Search aria-hidden="true" className="h-5 w-5" />
+                  )}
+                </div>
                 <div className="font-semibold text-sm">
                   {m === "page-blank" ? "Page Blank" : "Ayah Mode"}
                 </div>
@@ -559,7 +566,7 @@ export function MemorizationTester() {
   // ── Testing Screen ───────────────────────────────────────────────────────
 
   return (
-    <div className={`mx-auto max-w-3xl rounded-3xl px-4 py-6 ${pageClass}`}>
+    <div className={`mx-auto max-w-3xl px-4 py-6 ${pageClass}`}>
       {/* Top bar */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
@@ -640,7 +647,6 @@ export function MemorizationTester() {
               </button>
             ) : (
               <div className="w-full space-y-3">
-                {/* <p className={`text-center text-sm ${mutedTextClass}`}>How did you do?</p> */}
                 <div className="grid grid-cols-3 gap-2">
                   <button
                     onClick={() => handleRate(0)}

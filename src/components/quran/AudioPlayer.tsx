@@ -66,12 +66,12 @@ export function AudioPlayerBar() {
           <div className="mb-1 flex items-center justify-between text-sm">
             <span className="text-gray-300">
               {error ? (
-                <span className="text-red-500">{error}</span>
+                <span className="text-red-400">{error}</span>
               ) : (
                 <>Surah {currentChapter}</>
               )}
             </span>
-            <span className="text-gray-500 dark:text-gray-400">
+            <span className="text-gray-400">
               {formatTime(progress)} / {formatTime(duration || 0)}
             </span>
           </div>

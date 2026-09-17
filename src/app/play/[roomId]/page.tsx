@@ -3,6 +3,7 @@
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Trophy, Medal } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useRoom } from "@/lib/hooks/useRoom";
 import { useGame } from "@/lib/hooks/useGame";
@@ -1231,6 +1232,13 @@ interface GameProps {
 
 const RESULT_MIN_MS = 3500; // minimum time to show the round result screen
 
+function RankBadge({ index }: { index: number }) {
+  if (index === 0) return <Trophy aria-hidden="true" className="h-3.5 w-3.5 text-amber-400" />;
+  if (index === 1) return <Medal aria-hidden="true" className="h-3.5 w-3.5 text-gray-300" />;
+  if (index === 2) return <Medal aria-hidden="true" className="h-3.5 w-3.5 text-amber-700" />;
+  return <span className="text-xs">{`#${index + 1}`}</span>;
+}
+
 function GameInProgress({
   gameId,
   roomCode,
@@ -1421,8 +1429,6 @@ function GameInProgress({
     }))
     .sort((a, b) => b.score - a.score);
 
-  const rankEmoji = ["🥇", "🥈", "🥉"];
-
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-gray-950 text-white">
       <div className="mx-auto max-w-2xl px-4 py-12">
@@ -1447,7 +1453,7 @@ function GameInProgress({
                     : "bg-gray-800 text-gray-300"
                 }`}
               >
-                <span className="text-xs">{rankEmoji[i] ?? `#${i + 1}`}</span>
+                <RankBadge index={i} />
                 <span className="max-w-24 truncate">{p.isMe ? "You" : p.name}</span>
                 <span className={`font-mono ${p.isMe ? "text-emerald-400" : "text-gray-400"}`}>
                   {p.score}
