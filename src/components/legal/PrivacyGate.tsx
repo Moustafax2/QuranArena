@@ -49,7 +49,7 @@ export function PrivacyGate({ children }: { children: ReactNode }) {
   return <main className="mx-auto max-w-xl px-5 py-16 text-gray-200">
     <h1 className="text-3xl font-bold text-white">Before you use QuranArena</h1>
     {status === "loading" ? <p className="mt-6">Checking your privacy choices…</p> : status === "underage" ?
-      <p className="mt-6">QuranArena is for ages 13 and older. You can still read our privacy and terms pages. If this age choice was a mistake, contact QuranArena@protonmail.com.</p> : <>
+      <p className="mt-6">QuranArena is for ages 13 and older. You can still read our privacy and terms pages. If this age choice was a mistake, contact support@quranarena.ca.</p> : <>
       <p className="mt-5 leading-7">Bookmarks, learning history and game activity can reveal religious beliefs. With your permission, we use them for study tools, progress, syncing and multiplayer. Guest play can also save data on our servers. Existing local learning history may be uploaded when a player identity becomes available.</p>
       <fieldset className="mt-6 space-y-3"><legend className="mb-3 font-semibold">Are you at least 13 and old enough to use this service under your local law?</legend>
         <label className="block"><input type="radio" name="age" value="yes" checked={age === "yes"} onChange={() => setAge("yes")} /> Yes</label>

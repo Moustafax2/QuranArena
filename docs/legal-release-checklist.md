@@ -4,12 +4,12 @@ Updated October 25, 2026. Changes are local, pending migration/deployment and li
 
 ## Confirmed facts
 
-- Operator and support/privacy inbox owner: Abdullah Amin. Public contact QuranArena@protonmail.com. Personal email is not published or committed.
+- Operator and support/privacy inbox owner: Abdullah Amin. Public contact support@quranarena.ca. The private forwarding destination and personal email are not published or committed.
 - Authorized postal address: 142 Breton Avenue, Mississauga, Ontario L4Z 4K4, Canada.
 - Official domain https://www.quranarena.ca/; age 13+, subject to local requirements.
 - Supabase Free, primary DB North Virginia us-east-1. Dashboard shows no backups; developers confirm no downloaded backups/user exports/copies. Provider-internal retention is not established by this.
 - Vercel Hobby; teammate confirms production uses Washington, D.C. iad1 and no log drains/external logging. CDN/support/log processing may differ from function region.
-- Proton Free for support/privacy mail. No automatic forwarding; manual mail handling/retention still needs operational confirmation.
+- Mail sent to support@quranarena.ca is forwarded to the private Proton Mail inbox monitored by Abdullah Amin. Manual mail handling/retention and backup coverage still need operational confirmation.
 - No third-party audience analytics or generative-AI integration found in application source; user-facing learning statistics are processed internally.
 - Guest retention approved: 24 hours of inactivity. Operator will provide security/backup-inbox coverage later and contact QF for missing integration details.
 
