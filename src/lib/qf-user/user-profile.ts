@@ -67,7 +67,7 @@ function isMissingColumnError(error: unknown, columnName: string): boolean {
 }
 
 export async function upsertPlayerFromQfUser(user: QfUserProfile): Promise<PlayerRow> {
-  const displayName = user.name || user.email || "Player";
+  const displayName = user.name?.trim() && user.name.trim().toLowerCase() !== user.email?.trim().toLowerCase() ? user.name.trim() : "Player";
   const timestamp = new Date().toISOString();
 
   const existing = await supabaseRequest<PlayerRow[]>(

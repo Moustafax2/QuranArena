@@ -7,6 +7,8 @@ export function Footer() {
         <nav aria-label="Legal" className="mb-4 flex flex-wrap justify-center gap-x-6 gap-y-2">
           <Link href="/privacy" className="underline underline-offset-4 hover:text-emerald-400">Privacy Policy</Link>
           <Link href="/terms" className="underline underline-offset-4 hover:text-emerald-400">Terms of Service</Link>
+          <Link href="/privacy/controls" className="underline underline-offset-4 hover:text-emerald-400">Privacy controls</Link>
+          <Link href="/credits" className="underline underline-offset-4 hover:text-emerald-400">Content credits</Link>
         </nav>
         <p>
           Powered by{" "}

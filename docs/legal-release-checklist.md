@@ -1,38 +1,40 @@
 # Privacy and terms release checklist
 
-Reviewed September 15, 2026. `/privacy` and `/terms` are public, unauthenticated draft routes. They deliberately retain a draft notice and `noindex` until the facts and controls below are verified. Footer, login and account links expose them. No deployment or QF approval is implied.
+Updated October 25, 2026. Changes are local, pending migration/deployment and live validation. Public legal pages are marked effective October 25, 2026 and are indexable once deployed.
 
-## Inputs still needed
+## Confirmed facts
 
-- Replace `[LEGAL OPERATOR NAME]`, `[PRIVACY EMAIL]` and `[MAILING ADDRESS]` in the privacy contact section. The owner explicitly requested placeholders for now.
-- Confirm minimum age (draft proposes 13; Quran.com's own terms use 18), operator jurisdiction, production domain, effective date and responsible privacy/security contact.
-- Confirm Vercel hosting, Supabase project regions, operational logs, backup expiry and all other production processors. Identify privacy terms/ownership for external content and avatar hosts, including files.quran.app. Do not infer signed contracts from an SDK or hosting URL.
-- Verify provider DPAs, Islamic-content contractual restrictions and international transfer safeguards. Confirm the proposed 90-day secret rotation cadence and emergency rotation owner.
+- Operator and support/privacy inbox owner: Abdullah Amin. Public contact QuranArena@protonmail.com. Personal email is not published or committed.
+- Authorized postal address: 142 Breton Avenue, Mississauga, Ontario L4Z 4K4, Canada.
+- Official domain https://www.quranarena.ca/; age 13+, subject to local requirements.
+- Supabase Free, primary DB North Virginia us-east-1. Dashboard shows no backups; developers confirm no downloaded backups/user exports/copies. Provider-internal retention is not established by this.
+- Vercel Hobby; teammate confirms production uses Washington, D.C. iad1 and no log drains/external logging. CDN/support/log processing may differ from function region.
+- Proton Free for support/privacy mail. No automatic forwarding; manual mail handling/retention still needs operational confirmation.
+- No third-party audience analytics or generative-AI integration found in application source; user-facing learning statistics are processed internally.
+- Guest retention approved: 24 hours of inactivity. Operator will provide security/backup-inbox coverage later and contact QF for missing integration details.
 
-## Requirements that wording cannot implement
+## Implemented
 
-| Area | Evidence in this repository | Release action |
-| --- | --- | --- |
-| Sensitive-data consent | Guest bookmarks/training persist in browser storage; signed-in training can migrate to Supabase. Login has no separate religious-data consent. | Add separate unticked affirmative consent before relevant processing for guests and accounts, with versioned evidence, withdrawal and server enforcement. Do not equate accepting terms or OAuth scopes with that consent. |
-| Deletion and rights | Bookmark removal and flashcard reset exist; account-wide deletion/export does not. | Provide a verified request inbox or authenticated screen; implement access/correction/export, live erasure within 30 days, backup expiry within 90 days, and removal following QF account deletion. Cover friends, invites, rooms, results, reviews and memorization records; define guest/log retention. Test restoration does not resurrect deleted records. |
-| Revocation | Logout clears cookies and uses QF end-session; no separate disconnect/permission UI. | Implement and test revocation with the configured issuer's discovery endpoint, including refresh-token invalidation. The public policy's production revocation link is a POST API, not a browser action. Test prelive and production separately. |
-| Children | No age check in current login. | Confirm age and block detected underage enrollment; define handling/removal of underage data. |
-| Storage and access | AES-GCM session cookies and production secure flags exist. Infrastructure settings are not proven by code. | Verify TLS 1.2+, database/backup encryption, least-privilege service access, RLS/realtime permissions, rotation and access reviews. |
-| Offline cache | `public/sw.js` caches every successful GET, including potentially account/API responses, without expiry. | Scope offline caching to safe public assets, exclude private/API/auth responses, purge legacy caches, enforce QF content caching limits and test account switching/offline behavior. |
-| Identity visibility | `user-profile.ts` falls back to email for display name; friend search can match email. | Confirm intended discoverability, remove accidental email exposure or obtain appropriate disclosure/choice. |
-| Incidents | No demonstrated monitoring/on-call process. | Assign owner; begin response in less than 24 hours and notify developers@quran.com of suspected/actual API incidents within 24 hours of discovery. Record timeline, contain exposure, rotate affected secrets and apply legally required user/regulator notices. Never include live tokens in reports. |
-| Changes | No versioned legal notice/acceptance system. | Add in-app material-change notices and obtain fresh consent for changed sensitive-data purposes. |
+- Separate age and sensitive-data choices, versioned receipts, server enforcement, account-wide withdrawal of existing linked receipts. Other clients check consent every 30 seconds and on focus; API enforcement applies on every request. Browser-local data on other devices must be cleared there.
+- Verified guest cookies, 24-hour inactivity checks and transactional cleanup. Scheduled purge runs every 15 minutes once installed; actual erasure can follow expiry by that interval or longer during an outage. Browser-local guest learning data is cleared on the next check after inactivity; closing a browser cannot trigger guaranteed erasure.
+- Export, transactional app deletion, optional bookmark permission, QF token revocation and session invalidation.
+- A transport-independent QF deletion adapter with atomic delivery-ID deduplication; no unauthenticated public deletion webhook. Future QF event verification feeds this adapter.
+- Restricted erasure ledger and tested restore suppression RPC/tool. Ledger must be preserved outside an older backup before restoration. No external copies created by this work.
+- Multiplayer reads through membership-checked server routes; public table/column access revoked by migration 010. Public game broadcasts removed. Active answer keys/future questions excluded; answer review returns only the requesting player's answers. Synchronization uses authenticated polling (1-second game / 2-second room intervals), with corresponding latency and request load to assess in live testing.
+- Server-only Edge authorization, same-origin writes, no-store API responses, cleanup of legacy service-worker caches, no email fallback/search. Bounded previously indefinite content caches.
+- Unlinked consent receipts retained up to one year, withdrawn receipts 30 days, minimal erasure ledger/delivery IDs 90 days; scheduler performs removal. No religious activity is retained in the erasure ledger.
 
-## Final publication
+## Remaining before final release
 
-After the above is verified, replace proposed/unverified language with accurate approved practices, remove the draft notice and `noindex`, and set a real effective date in `LegalPage.tsx`. Have qualified counsel review the final terms against the operator's jurisdiction and audience. Verify both routes over the public HTTPS deployment without a login and use those URLs in the QF application registration. Do not claim QF certification.
+1. Apply migrations 009 then 010; enable Cron and run `supabase/operations/schedule-privacy-cleanup.sql`. Configure matching MULTIPLAYER_SERVER_SECRET in Vercel and Edge and deploy the app plus all six functions together. New app must not run against the old schema/functions.
+2. Verify configured callback/domain in Vercel and QF; run the two-user/two-room prelive and live test plan in `privacy-operations.md`. Test guard failures, polling latency, timed rounds, buzzer mode, account switching, deletion, consent expiry and provider outages. No hosted migration or destructive live test has been performed.
+3. Get QF's notification/reconciliation contract, implement signature/authentication + issuer/client subject mapping and wire it to `purgeVerifiedQfAccount`. Don't infer deletion from an expired token. Until then deletion is available through app controls/verified support only.
+4. Confirm provider DPAs, transfer safeguards, internal log/backup retention, encryption/access controls and rotation. Plan/region screenshots don't prove contractual coverage. Restore process must be adopted and tested in hosted infrastructure; 90-day provider backup deletion cannot be enforced by app SQL.
+5. Assign incident responders/backup inbox coverage; approve support-mail and provider-log retention and request verification procedures. These are operational tasks, not solved by adding policy text.
+6. Track the three accepted content follow-ups in `content-source-audit.md`: migrate the public lexical bundle to QF Content Sync or remove its QF-derived translations; obtain resource-specific Al-Muyassar confirmation; obtain an explicit license/permission for the Hans Wehr database. Provenance and public attribution are now recorded, and the two server-only sources are no longer directly downloadable. These are acknowledged risks, not verified permissions.
 
-## Sources
+## Verification
 
-- [QF developer privacy requirements](https://api-docs.quran.foundation/legal/developer-privacy/)
-- [QF developer terms, including section 3.2](https://api-docs.quran.foundation/legal/developer-terms/)
-- [Quran.com privacy](https://quran.com/privacy)
-- [Quran.com terms](https://quran.com/terms-and-conditions)
-- [QF revocation endpoint example](https://api-docs.quran.foundation/docs/tutorials/oidc/mobile-apps/react-native/)
-- [QF logout semantics](https://api-docs.quran.foundation/docs/oauth2_apis_versioned/revoke-oidc-session/)
-- Tazkiya's requested home/privacy URLs returned no readable content in web retrieval; browser navigation timed out. No claims or text were copied from that unavailable policy.
+Local regression suites cover ownership, consent failure, origin checks, revocation partial failure, membership denial, invite redaction, active/future answer-key filtering, guest TTL, all-linked-receipt withdrawal, deletion rollback/cascades, provider-event retries and restore suppression. Embedded PostgreSQL tests do not validate hosted settings or realtime-provider behavior. Run npm test, the PGlite SQL suite, TypeScript, changed-file lint and production build before pushing.
+
+Sources: [QF privacy](https://api-docs.quran.foundation/legal/developer-privacy/), [QF terms](https://api-docs.quran.foundation/legal/developer-terms/), [Supabase Cron](https://supabase.com/docs/guides/cron/quickstart).

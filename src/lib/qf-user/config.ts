@@ -65,7 +65,7 @@ export function getAppBaseUrl(): string {
   }
 
   if (process.env.NODE_ENV === "production") {
-    return "https://quran-hackathon.vercel.app";
+    return "https://www.quranarena.ca";
   }
 
   return "http://localhost:3000";
@@ -88,13 +88,8 @@ export function getQfUserApiBaseUrl(): string {
   return DEFAULT_USER_API_BASES[getQfEnvironment()];
 }
 
-export function getQfRequestedScopes(): string {
-  const override = process.env.QF_USER_SCOPES?.trim();
-  if (override) {
-    return override;
-  }
-
-  return ["openid", "offline_access", "bookmark", "user"].join(" ");
+export function getQfRequestedScopes(bookmarks = false): string {
+  return ["openid", "offline_access", "user", ...(bookmarks ? ["bookmark"] : [])].join(" ");
 }
 
 export function getQfSessionSecret(): string {

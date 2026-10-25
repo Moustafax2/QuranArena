@@ -5,6 +5,7 @@ export interface QfOidcDiscoveryDocument {
   userinfo_endpoint?: string;
   jwks_uri: string;
   end_session_endpoint?: string;
+  revocation_endpoint?: string;
 }
 
 export interface QfTokenResponse {
@@ -70,6 +71,9 @@ export interface QfToggleFollowResponse {
 }
 
 export interface QfSession {
+  issued_at: number;
+  session_version: number;
+  scopes?: string;
   access_token: string;
   refresh_token: string | null;
   id_token: string;
@@ -91,6 +95,7 @@ export interface QfSessionSummary {
 }
 
 export interface QfLoginTransaction {
+  scopes?: string;
   state: string;
   nonce: string;
   code_verifier: string;

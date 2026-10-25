@@ -45,6 +45,9 @@ async function request<T>(
   path: string,
   init?: RequestInit
 ): Promise<T> {
+  if (path.startsWith("/bookmarks") && !session.scopes?.split(" ").includes("bookmark")) {
+    throw new QfUserApiError("Connect bookmark permission from the sign-in page first.", 403);
+  }
   const baseUrl = getQfUserApiBaseUrl();
   const response = await fetch(`${baseUrl}/auth/v1${path}`, {
     ...init,

@@ -1,161 +1,43 @@
 "use client";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { INITIAL_GAME_STATE, type GameState } from "@/lib/game/state-machine";
 
-import { useEffect, useReducer, useCallback, useRef } from "react";
-import { createClient } from "@/lib/supabase/client";
-import type { Database } from "@/lib/supabase/types";
-import type { RealtimeChannel } from "@supabase/supabase-js";
-import {
-  INITIAL_GAME_STATE,
-  reduceGameState,
-  type GameEvent,
-  type GameState,
-} from "@/lib/game/state-machine";
-
-type GameRow = Database["public"]["Tables"]["games"]["Row"];
-type GameRoundRow = Database["public"]["Tables"]["game_rounds"]["Row"];
-type RoomPlayerRow = Database["public"]["Tables"]["room_players"]["Row"];
-
-interface SubmitResult { ok: boolean; error?: string }
-
-interface UseGameReturn {
-  gameState: GameState;
-  submitAnswer: (roundId: string, answerVerseKey: string) => Promise<SubmitResult>;
-  pressBuzzer: (roundId: string) => Promise<SubmitResult>;
-}
-
-/**
- * Manages Broadcast subscription for an active game.
- * Listens for game events and provides actions to submit answers / buzz.
- */
-export function useGame(
-  gameId: string | null,
-  playerId: string | null,
-  guestPlayerId?: string | null
-): UseGameReturn {
-  const [gameState, dispatch] = useReducer(reduceGameState, INITIAL_GAME_STATE);
-  const channelRef = useRef<RealtimeChannel | null>(null);
-
+export function useGame(gameId: string | null, playerId: string | null, guestPlayerId?: string | null) {
+  const [gameState, setGameState] = useState<GameState>(INITIAL_GAME_STATE);
+  const lastRound = useRef<string | null>(null);
+  const shownResult = useRef<string | null>(null);
   useEffect(() => {
-    if (!gameId) return;
-    const currentGameId = gameId;
-
-    const supabase = createClient();
-    const channel = supabase.channel(`game:${currentGameId}`, {
-      config: {
-        broadcast: {
-          self: false,
-        },
-      },
-    });
+    if (!gameId || !playerId) return;
+    lastRound.current = null;
+    shownResult.current = null;
     let cancelled = false;
-
-    async function hydrateCurrentRound() {
-      const gameResponse = await supabase
-        .from("games")
-        .select("id, room_id, total_rounds, winner_id, ended_at")
-        .eq("id", currentGameId)
-        .single();
-      const game = gameResponse.data as Pick<
-        GameRow,
-        "id" | "room_id" | "total_rounds" | "winner_id" | "ended_at"
-      > | null;
-
-      if (!game || cancelled) return;
-
-      if (game.ended_at) {
-        const roomPlayersResponse = await supabase
-          .from("room_players")
-          .select("player_id, score")
-          .eq("room_id", game.room_id)
-          .eq("status", "active");
-        const roomPlayers = roomPlayersResponse.data as Pick<
-          RoomPlayerRow,
-          "player_id" | "score"
-        >[] | null;
-
-        const scores = Object.fromEntries(
-          (roomPlayers ?? []).map((row) => [row.player_id, row.score])
-        );
-
-        dispatch({
-          type: "game:end",
-          payload: {
-            scores,
-            winner_id: game.winner_id,
-          },
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      try {
+        const response = await fetch('/api/multiplayer/state?game=' + encodeURIComponent(gameId!), { cache: 'no-store' });
+        if (!response.ok) { if (!cancelled) setGameState(INITIAL_GAME_STATE); return; }
+        const data = await response.json();
+        let round = data.rounds.find((r: { ended_at: string | null }) => !r.ended_at) ?? data.rounds.at(-1);
+        const finished = data.rounds.find((r: { id: string; ended_at: string | null }) => r.id === lastRound.current && r.ended_at);
+        if (finished && shownResult.current !== finished.id && !data.game.ended_at) {
+          round = finished;
+          shownResult.current = finished.id;
+        } else if (round && !round.ended_at) lastRound.current = round.id;
+        const scores = Object.fromEntries(data.players.map((p: { player_id: string; score: number }) => [p.player_id, p.score]));
+        const options = (round?.options ?? []).map((o: unknown) => typeof o === 'string' ? JSON.parse(o) : o);
+        if (!cancelled) setGameState({
+          phase: data.game.ended_at ? 'game_over' : round?.ended_at ? 'round_result' : round ? 'round_active' : 'lobby',
+          game_id: gameId,
+          current_round: round ? { round_id: round.id, round_number: round.round_number, total_rounds: data.game.total_rounds, prompt_verse_key: round.prompt_verse_key, prompt_text: round.prompt_text ?? '', options } : null,
+          round_result: round?.ended_at ? { correct_verse_key: round.correct_verse_key, correct_text: round.correct_text ?? '', answers: data.answers.filter((a: { round_id: string }) => a.round_id === round.id), scores } : null,
+          scores, winner_id: data.game.winner_id,
         });
-        return;
-      }
-
-      const roundsResponse = await supabase
-        .from("game_rounds")
-        .select("*")
-        .eq("game_id", currentGameId)
-        .order("round_number", { ascending: true });
-      const rounds = roundsResponse.data as GameRoundRow[] | null;
-
-      if (!rounds || cancelled) return;
-
-      const currentRound =
-        rounds.find((round) => !round.ended_at) ??
-        rounds[0];
-
-      if (!currentRound) return;
-
-      const options = (currentRound.options ?? []).map((option) => {
-        if (typeof option === "string") {
-          try {
-            return JSON.parse(option) as { verse_key: string; text: string };
-          } catch {
-            return { verse_key: "", text: option };
-          }
-        }
-
-        return option as unknown as { verse_key: string; text: string };
-      });
-
-      dispatch({
-        type: "round:start",
-        payload: {
-          round_id: currentRound.id,
-          round_number: currentRound.round_number,
-          total_rounds: game.total_rounds,
-          prompt_verse_key: currentRound.prompt_verse_key,
-          prompt_text: currentRound.prompt_text ?? "",
-          options,
-        },
-      });
+      } catch { if (!cancelled) setGameState(INITIAL_GAME_STATE); }
+      finally { if (!cancelled) timer = setTimeout(poll, 1000); }
     }
-
-    channel
-      .on("broadcast", { event: "game_event" }, ({ payload }) => {
-        const event = payload as GameEvent;
-        dispatch(event);
-
-        // The server can end one round and immediately broadcast the next.
-        // Re-hydrate after round end so clients recover even if that next
-        // round:start broadcast is missed locally.
-        if (event.type === "round:end") {
-          window.setTimeout(() => {
-            void hydrateCurrentRound();
-          }, 250);
-        }
-      })
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          void hydrateCurrentRound();
-        }
-      });
-
-    channelRef.current = channel;
-
-    return () => {
-      cancelled = true;
-      supabase.removeChannel(channel);
-      channelRef.current = null;
-    };
-  }, [gameId]);
-
+    void poll();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [gameId, playerId]);
   const buildHeaders = useCallback(() => {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (guestPlayerId) headers["X-Guest-Player-Id"] = guestPlayerId;

@@ -19,13 +19,8 @@ export function LegalPage({ title, description, sections }: {
         <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">QuranArena · Legal</p>
         <h1 className="mt-3 text-4xl font-bold tracking-tight text-white sm:text-5xl">{title}</h1>
         <p className="mt-4 text-lg leading-8">{description}</p>
-        <p className="mt-4 text-sm text-gray-400">Draft updated: September 15, 2026 · Effective date: pending publication</p>
+        <p className="mt-4 text-sm text-gray-400">Effective: October 25, 2026 · Last updated: October 25, 2026</p>
       </header>
-      <aside aria-label="Draft status" className="mt-8 rounded-2xl border border-amber-400/30 bg-amber-400/5 p-5 text-sm leading-7 text-amber-100">
-        Draft for review. Operator contact details and the safeguards described as proposed below
-        still need confirmation before this policy takes effect. This draft is not a statement
-        that QuranArena has completed Quran Foundation compliance review.
-      </aside>
       <nav aria-label={`${title} contents`} className="my-10 rounded-2xl border border-gray-800 bg-gray-900/50 p-6">
         <h2 className="font-semibold text-white">On this page</h2>
         <ol className="mt-4 grid gap-3 text-sm sm:grid-cols-2">

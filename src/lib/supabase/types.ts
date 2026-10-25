@@ -1,8 +1,16 @@
 export interface Database {
   public: {
     Tables: {
+      privacy_consents: {
+        Row: { id: string; player_id: string | null; version: string; accepted_at: string; withdrawn_at: string | null };
+        Insert: { id: string; player_id?: string | null; version: string; accepted_at?: string; withdrawn_at?: string | null };
+        Update: { player_id?: string | null; withdrawn_at?: string | null };
+        Relationships: [];
+      };
       players: {
         Row: {
+          last_active_at: string;
+          session_version: number;
           id: string;
           quran_foundation_uid: string | null;
           qf_email: string | null;
@@ -14,6 +22,8 @@ export interface Database {
           created_at: string;
         };
         Insert: {
+          last_active_at?: string;
+          session_version?: number;
           id?: string;
           quran_foundation_uid?: string | null;
           qf_email?: string | null;
@@ -25,6 +35,8 @@ export interface Database {
           created_at?: string;
         };
         Update: {
+          last_active_at?: string;
+          session_version?: number;
           id?: string;
           quran_foundation_uid?: string | null;
           qf_email?: string | null;
@@ -516,7 +528,15 @@ export interface Database {
       };
     };
     Views: { [_ in never]: never };
-    Functions: { [_ in never]: never };
+    Functions: {
+      purge_qf_user_data: { Args: { subject_id: string; delivery_id: string }; Returns: undefined };
+      withdraw_player_consent: { Args: { target_player: string }; Returns: undefined };
+      touch_guest_player: { Args: { target_player: string }; Returns: boolean };
+      cleanup_privacy_data: { Args: Record<string, never>; Returns: number };
+      delete_player_data: { Args: { target_player: string }; Returns: undefined };
+      invalidate_player_sessions: { Args: { target_player: string }; Returns: undefined };
+      export_player_data: { Args: { target_player: string }; Returns: Record<string, unknown> };
+    };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
   };
