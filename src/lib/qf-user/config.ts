@@ -65,7 +65,9 @@ export function getAppBaseUrl(): string {
   }
 
   if (process.env.NODE_ENV === "production") {
-    return "https://www.quranarena.ca";
+    // Temporary production fallback while QF has only the original callback
+    // registered. APP_URL remains the authoritative deployment setting.
+    return "https://quran-hackathon.vercel.app";
   }
 
   return "http://localhost:3000";

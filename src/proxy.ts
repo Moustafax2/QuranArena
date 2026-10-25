@@ -11,7 +11,7 @@ export async function proxy(request: NextRequest) {
   }
   // Privacy rights remain available after consent is withdrawn. Each handler
   // still verifies identity and its own input; this is not an auth bypass.
-  const exempt = path.startsWith("/api/privacy/") || path === "/api/auth/qf/logout";
+  const exempt = path.startsWith("/api/privacy/") || path === "/api/auth/qf/logout" || path === "/api/auth/callback";
   if (!exempt) {
     try {
       if (!await getConsentReceipt(request.cookies.get(CONSENT_COOKIE)?.value ?? "")) {

@@ -44,6 +44,7 @@ async function main() {
   });
   assert.equal((await proxy(new NextRequest("https://app.test/api/progress"))).status, 403);
   assert.equal((await proxy(new NextRequest("https://app.test/api/privacy/export"))).status, 200);
+  assert.equal((await proxy(new NextRequest("https://app.test/api/auth/callback?code=test&state=test"))).status, 200);
   assert.equal((await proxy(new NextRequest("https://app.test/api/privacy/delete", { method: "POST", headers: { origin: "https://evil.test" } }))).status, 403);
   active = true;
   const allowed = await proxy(new NextRequest("https://app.test/api/progress"));
@@ -100,6 +101,30 @@ async function main() {
   assert.equal((await requireAppServer(new Request("https://edge.test"))).status, 401);
   assert.equal((await requireAppServer(new Request("https://edge.test", { headers: { "x-quranarena-server-secret": "wrong" } }))).status, 401);
   assert.equal(await requireAppServer(new Request("https://edge.test", { headers: { "x-quranarena-server-secret": "a".repeat(32) } })), null);
-  console.log("Privacy tests passed: signed-token tampering/expiry/purpose, guest ID forgery, consent gates/failure, deletion identity/failure, partial QF revocation, CSRF, no-store, cache cleanup, edge server authorization.");
+  const cookieValues = new Map();
+  const qfSession = loadWithMocks("../src/lib/qf-user/session.ts", {
+    "./config": { getQfSessionSecret: () => process.env.QF_SESSION_SECRET },
+    "./oidc": {},
+    "./user-profile": {},
+    "@/lib/supabase/admin": {},
+    "@/lib/privacy/consent": {},
+    "next/headers": { cookies: async () => ({ get: name => cookieValues.has(name) ? { value: cookieValues.get(name) } : undefined }) },
+  });
+  const cookieStore = { set: (name, value) => cookieValues.set(name, value) };
+  const largeSession = {
+    issued_at: Date.now(), session_version: 0, scopes: "openid offline_access user",
+    access_token: "a".repeat(1400), refresh_token: "r".repeat(80), id_token: "i".repeat(2200),
+    expires_at: Date.now() + 3600000, player_id: "player", user: { sub: "subject", email: null, name: "Player", avatar: null },
+  };
+  await qfSession.writeSessionCookie(cookieStore, largeSession);
+  assert(cookieValues.has("qf_session")); assert(cookieValues.has("qf_id_token"));
+  assert(Buffer.byteLength(`qf_session=${cookieValues.get("qf_session")}`) <= 3800);
+  assert(Buffer.byteLength(`qf_id_token=${cookieValues.get("qf_id_token")}`) <= 3800);
+  assert.deepEqual(await qfSession.readSessionCookie(), largeSession);
+  const gateSource = fs.readFileSync("src/components/legal/PrivacyGate.tsx", "utf8");
+  assert(!gateSource.includes("draft Privacy Policy"));
+  const providersSource = fs.readFileSync("src/app/providers.tsx", "utf8");
+  assert(providersSource.includes('pathname === "/credits"'));
+  console.log("Privacy tests passed: signed-token tampering/expiry/purpose, guest ID forgery, consent gates/failure, OAuth callback exemption and split-cookie round trip, deletion identity/failure, partial QF revocation, CSRF, no-store, public legal pages, cache cleanup, edge server authorization.");
 }
 main().catch(e => { console.error(e); process.exitCode = 1; });
