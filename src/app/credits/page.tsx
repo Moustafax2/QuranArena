@@ -73,7 +73,7 @@ export default function CreditsPage() {
           <h2 className="mb-3 text-2xl font-semibold text-white">Corrections</h2>
           <p>
             To report a source, attribution or content correction, email {" "}
-            <a href="mailto:QuranArena@protonmail.com">QuranArena@protonmail.com</a>.
+            <a href="mailto:support@quranarena.ca">support@quranarena.ca</a>.
           </p>
         </section>
       </div>

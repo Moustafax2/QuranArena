@@ -25,6 +25,6 @@ export async function POST(request: NextRequest) {
     }
     return response;
   } catch {
-    return NextResponse.json({ error: "Deletion was not completed. Please retry or email QuranArena@protonmail.com." }, { status: 503 });
+    return NextResponse.json({ error: "Deletion was not completed. Please retry or email support@quranarena.ca." }, { status: 503 });
   }
 }

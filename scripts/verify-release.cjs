@@ -27,6 +27,8 @@ async function main() {
   assert(privacy.includes("L4Z 4K4"), "Privacy postal code is missing");
   assert(!privacy.toLowerCase().includes("noindex"), "Privacy page is still noindex");
   assert(!privacy.includes("Draft for review"), "Privacy page still contains the draft banner");
+  assert(privacy.includes("support@quranarena.ca"), "Privacy support email is missing");
+  assert(!privacy.toLowerCase().includes("quranarena@protonmail.com"), "Privacy page still publishes the forwarding inbox");
   console.log("ok privacy publication metadata");
 
   const { response: consent } = await request("/api/privacy/consent");
