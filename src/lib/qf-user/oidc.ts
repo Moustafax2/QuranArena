@@ -10,23 +10,6 @@ import {
 } from "./config";
 import type { QfIdTokenClaims, QfTokenResponse, QfUserProfile } from "./types";
 
-async function parseJsonSafe(response: Response): Promise<unknown> {
-  const contentType = response.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
-    try {
-      return await response.json();
-    } catch {
-      return null;
-    }
-  }
-
-  try {
-    return await response.text();
-  } catch {
-    return null;
-  }
-}
-
 function buildBasicAuthHeader(clientId: string, clientSecret: string): string {
   return `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`;
 }
@@ -59,9 +42,8 @@ export async function exchangeAuthorizationCode(input: {
   });
 
   if (!response.ok) {
-    const details = await parseJsonSafe(response);
     throw new Error(
-      `Quran Foundation code exchange failed (${response.status}): ${JSON.stringify(details)}`
+      `Quran Foundation code exchange failed (${response.status}).`
     );
   }
 
@@ -90,9 +72,8 @@ export async function refreshAccessToken(refreshToken: string): Promise<QfTokenR
   });
 
   if (!response.ok) {
-    const details = await parseJsonSafe(response);
     throw new Error(
-      `Quran Foundation token refresh failed (${response.status}): ${JSON.stringify(details)}`
+      `Quran Foundation token refresh failed (${response.status}).`
     );
   }
 

@@ -14,6 +14,7 @@ export default function LoginPageClient({
   nextPath,
 }: LoginPageClientProps) {
   const [loading, setLoading] = useState(false);
+  const [bookmarks, setBookmarks] = useState(false);
   const [error, setError] = useState<string | null>(errorMessage);
   const safeNextPath = useMemo(
     () => (nextPath.startsWith("/") ? nextPath : "/"),
@@ -39,6 +40,7 @@ export default function LoginPageClient({
           code_verifier: codeVerifier,
           code_challenge: codeChallenge,
           redirect_to: safeNextPath,
+          bookmarks,
         }),
       });
 
@@ -78,6 +80,15 @@ export default function LoginPageClient({
             </div>
           )}
 
+          <p className="mt-6 text-sm leading-6 text-gray-400">
+            Review our <Link href="/privacy" className="text-emerald-400 underline">Privacy Policy</Link> and{" "}
+            <Link href="/terms" className="text-emerald-400 underline">Terms of Service</Link> before connecting your account.
+          </p>
+
+          <label className="mt-5 flex items-start gap-3 text-sm text-gray-300">
+            <input type="checkbox" checked={bookmarks} onChange={e => setBookmarks(e.target.checked)} />
+            Connect my Quran.com bookmarks (optional). You can add this permission later by signing in again.
+          </label>
           <button
             onClick={() => void handleLogin()}
             disabled={loading}

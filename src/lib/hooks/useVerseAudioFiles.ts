@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import type { VerseAudioFile, VerseAudioFilesResponse } from "@/lib/types";
 
 // Module-level cache: avoids re-fetching when user toggles reciters
-const cache = new Map<string, VerseAudioFile[]>();
+const cache = new Map<string, { files: VerseAudioFile[]; expires: number }>();
 
 export function useVerseAudioFiles() {
   const [isLoading, setIsLoading] = useState(false);
@@ -14,7 +14,8 @@ export function useVerseAudioFiles() {
     async (reciterId: number, chapterNumber: number): Promise<VerseAudioFile[]> => {
       const key = `${reciterId}-${chapterNumber}`;
       const cached = cache.get(key);
-      if (cached) return cached;
+      if (cached && cached.expires > Date.now()) return cached.files;
+      cache.delete(key);
 
       setIsLoading(true);
       setError(null);
@@ -28,7 +29,7 @@ export function useVerseAudioFiles() {
           throw new Error(payload?.error ?? "Failed to load verse audio.");
         }
         const data = (await res.json()) as VerseAudioFilesResponse;
-        cache.set(key, data.audio_files);
+        cache.set(key, { files: data.audio_files, expires: Date.now() + 3600000 });
         return data.audio_files;
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Failed to load verse audio.";

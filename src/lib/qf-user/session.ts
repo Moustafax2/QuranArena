@@ -10,7 +10,9 @@ import type {
   QfSessionSummary,
   QfTokenResponse,
 } from "./types";
-import { upsertPlayerFromQfUser } from "./user-profile";
+import { getPlayerById, upsertPlayerFromQfUser } from "./user-profile";
+import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { attachConsent } from "@/lib/privacy/consent";
 
 const SESSION_COOKIE = "qf_session";
 const TXN_COOKIE = "qf_login_txn";
@@ -119,7 +121,9 @@ export async function readSessionCookie(): Promise<QfSession | null> {
   const cookieStore = await cookies();
   const raw = cookieStore.get(SESSION_COOKIE)?.value;
   if (!raw) return null;
-  return decryptValue<QfSession>(raw);
+  const session = await decryptValue<QfSession>(raw);
+  if (!session || !Number.isFinite(session.issued_at) || session.issued_at > Date.now() || Date.now() - session.issued_at > SESSION_TTL_SECONDS * 1000) return null;
+  return session;
 }
 
 export function isSessionRefreshNeeded(session: QfSession): boolean {
@@ -128,7 +132,8 @@ export function isSessionRefreshNeeded(session: QfSession): boolean {
 
 export async function createSessionFromTokenResponse(
   tokens: QfTokenResponse,
-  nonce: string
+  nonce: string,
+  requestedScopes?: string
 ): Promise<QfSession> {
   if (!tokens.id_token) {
     throw new Error("Quran Foundation response did not include id_token.");
@@ -136,8 +141,12 @@ export async function createSessionFromTokenResponse(
 
   const verifiedUser = await verifyIdToken(tokens.id_token, nonce);
   const player = await upsertPlayerFromQfUser(verifiedUser);
+  await attachConsent(player.id);
 
   return {
+    issued_at: Date.now(),
+    session_version: player.session_version ?? 0,
+    scopes: tokens.scope ?? requestedScopes ?? "openid user",
     access_token: tokens.access_token,
     refresh_token: tokens.refresh_token ?? null,
     id_token: tokens.id_token,
@@ -156,12 +165,13 @@ export async function refreshSession(session: QfSession): Promise<QfSession> {
   const verifiedUser = refreshed.id_token
     ? await verifyIdToken(refreshed.id_token)
     : session.user;
-  const player = await upsertPlayerFromQfUser({
-    ...session.user,
-    ...verifiedUser,
-  });
+  const player = await getPlayerById(session.player_id);
+  if (!player || player.session_version !== session.session_version) throw new Error("Session no longer valid.");
 
   return {
+    issued_at: session.issued_at,
+    session_version: session.session_version,
+    scopes: refreshed.scope ?? session.scopes,
     access_token: refreshed.access_token,
     refresh_token: refreshed.refresh_token ?? session.refresh_token,
     id_token: refreshed.id_token ?? session.id_token,
@@ -175,7 +185,7 @@ export async function refreshSession(session: QfSession): Promise<QfSession> {
 }
 
 export async function getSessionSummary(): Promise<QfSessionSummary> {
-  const session = await readSessionCookie();
+  const session = await getUsableSession();
   if (!session) {
     return {
       isAuthenticated: false,
@@ -184,7 +194,8 @@ export async function getSessionSummary(): Promise<QfSessionSummary> {
     };
   }
 
-  const player = await upsertPlayerFromQfUser(session.user);
+  const player = await getPlayerById(session.player_id);
+  if (!player || player.session_version !== session.session_version) return { isAuthenticated: false, user: null, player: null };
 
   return {
     isAuthenticated: true,
@@ -204,6 +215,14 @@ export async function getUsableSession(
 ): Promise<QfSession | null> {
   const session = await readSessionCookie();
   if (!session) return null;
+
+  const { data: current, error } = await createAdminSupabaseClient().from("players")
+    .select("id, session_version").eq("id", session.player_id).maybeSingle();
+  if (error) throw new Error("Could not verify account session.");
+  if (!current || current.session_version !== session.session_version) {
+    if (cookieStore) clearQfCookies(cookieStore);
+    return null;
+  }
 
   if (!isSessionRefreshNeeded(session)) {
     return session;

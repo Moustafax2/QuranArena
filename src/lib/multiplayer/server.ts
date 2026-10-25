@@ -17,12 +17,15 @@ export async function invokeSupabaseEdgeFunction<T>(
   const adminConfig = getSupabaseAdminConfig();
   const supabaseUrl = normalizeEnvValue(adminConfig.url);
   const serviceRoleKey = normalizeEnvValue(adminConfig.serviceRoleKey);
+  const serverSecret = process.env.MULTIPLAYER_SERVER_SECRET?.trim();
+  if (!serverSecret || serverSecret.length < 32) throw new Error("Multiplayer server authorization is not configured.");
 
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error("Missing Supabase edge function configuration.");
   }
 
   const headers: HeadersInit = {
+    "x-quranarena-server-secret": serverSecret,
     apikey: serviceRoleKey,
     "Content-Type": "application/json",
   };

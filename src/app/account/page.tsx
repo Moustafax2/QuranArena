@@ -85,6 +85,14 @@ export default function AccountPage() {
       </div>
 
       <section className="mt-4 rounded-2xl border border-gray-800 bg-gray-900 p-5">
+        <h2 className="text-lg font-semibold">Privacy and your data</h2>
+        <div className="mt-3 flex flex-wrap gap-4 text-sm text-emerald-400">
+          <Link href="/privacy/controls" className="underline">Privacy controls and Delete My Data</Link>
+          <Link href="/terms" className="underline">Terms of Service</Link>
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-gray-800 bg-gray-900 p-5">
         <h2 className="text-lg font-semibold">Bookmark Sync</h2>
         <p className="mt-2 text-sm text-gray-400">
           Provider: <span className="text-white">{provider === "qf" ? "Quran Foundation" : "Local"}</span>

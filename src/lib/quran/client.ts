@@ -93,10 +93,10 @@ function createFetchInit(
     },
   };
 
-  if (options.cache) {
+  if (options.cache && options.cache !== "force-cache") {
     init.cache = options.cache;
   } else {
-    init.next = { revalidate: options.revalidate ?? 3600 };
+    init.next = { revalidate: Math.min(options.revalidate ?? 3600, 86400) };
   }
 
   return init;

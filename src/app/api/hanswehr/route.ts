@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
+import Database from "better-sqlite3";
 
-let db: import("better-sqlite3").Database | null = null;
+let db: Database.Database | null = null;
 
 function getDB() {
   if (!db) {
-    const Database = require("better-sqlite3");
-    const dbPath = path.join(process.cwd(), "public", "data", "hanswehr.sqlite");
+    const dbPath = path.join(process.cwd(), "data", "hanswehr.sqlite");
     db = new Database(dbPath, { readonly: true });
   }
   return db;

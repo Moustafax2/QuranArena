@@ -16,6 +16,7 @@ export async function POST(request: NextRequest) {
           code_verifier?: string;
           code_challenge?: string;
           redirect_to?: string;
+          bookmarks?: boolean;
         }
       | null;
 
@@ -28,13 +29,14 @@ export async function POST(request: NextRequest) {
 
     const discovery = await getQfDiscoveryDocument();
     const redirectTo =
-      body.redirect_to && body.redirect_to.startsWith("/") ? body.redirect_to : "/";
+      body.redirect_to && body.redirect_to.startsWith("/") && !body.redirect_to.startsWith("//") && !body.redirect_to.includes("\\") ? body.redirect_to : "/";
 
     const authorizationUrl = new URL(discovery.authorization_endpoint);
     authorizationUrl.searchParams.set("client_id", getQfClientId());
     authorizationUrl.searchParams.set("response_type", "code");
     authorizationUrl.searchParams.set("redirect_uri", getQfCallbackUrl());
-    authorizationUrl.searchParams.set("scope", getQfRequestedScopes());
+    const scopes = getQfRequestedScopes(body.bookmarks === true);
+    authorizationUrl.searchParams.set("scope", scopes);
     authorizationUrl.searchParams.set("state", body.state);
     authorizationUrl.searchParams.set("nonce", body.nonce);
     authorizationUrl.searchParams.set("code_challenge", body.code_challenge);
@@ -43,6 +45,7 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.json({ authorizationUrl: authorizationUrl.toString() });
     await writeLoginTransactionCookie(response.cookies, {
       state: body.state,
+      scopes,
       nonce: body.nonce,
       code_verifier: body.code_verifier,
       redirect_to: redirectTo,

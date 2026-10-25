@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getUsableSession, writeSessionCookie, clearQfCookies } from "@/lib/qf-user/session";
-import { upsertPlayerFromQfUser } from "@/lib/qf-user/user-profile";
+import { getPlayerById } from "@/lib/qf-user/user-profile";
 
 export async function GET() {
   const cookieCarrier = new NextResponse();
@@ -19,7 +19,8 @@ export async function GET() {
       );
     }
 
-    const player = await upsertPlayerFromQfUser(session.user);
+    const player = await getPlayerById(session.player_id);
+    if (!player || player.session_version !== session.session_version) throw new Error("Session no longer valid.");
     await writeSessionCookie(cookieCarrier.cookies, {
       ...session,
       player_id: player.id,
@@ -28,6 +29,7 @@ export async function GET() {
     return NextResponse.json(
       {
         isAuthenticated: true,
+        bookmarkSync: session.scopes?.split(" ").includes("bookmark") ?? false,
         user: session.user,
         player,
       },
