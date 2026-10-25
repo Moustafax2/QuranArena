@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  getAppBaseUrl,
   getQfCallbackUrl,
   getQfClientId,
   getQfRequestedScopes,
@@ -9,6 +10,17 @@ import { writeLoginTransactionCookie } from "@/lib/qf-user/session";
 
 export async function POST(request: NextRequest) {
   try {
+    const configuredOrigin = new URL(getAppBaseUrl()).origin;
+    if (request.nextUrl.origin !== configuredOrigin) {
+      return NextResponse.json(
+        {
+          error: `Quran.com sign-in is temporarily available at ${configuredOrigin} while the new callback domain is being registered.`,
+          loginUrl: `${configuredOrigin}/login`,
+        },
+        { status: 409 }
+      );
+    }
+
     const body = (await request.json().catch(() => null)) as
       | {
           state?: string;

@@ -14,15 +14,18 @@ function getSupabaseAdminConfig() {
 
 async function supabaseRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const { url, serviceRoleKey } = getSupabaseAdminConfig();
+  const headers = new Headers(init?.headers);
+  headers.set("apikey", serviceRoleKey);
+  headers.set("Content-Type", "application/json");
+  headers.set("Prefer", "return=representation");
+  // Supabase's current sb_secret_ keys are API keys, not JWTs. Sending one as
+  // a Bearer token can make PostgREST reject an otherwise valid admin request.
+  if (serviceRoleKey.split(".").length === 3) {
+    headers.set("Authorization", `Bearer ${serviceRoleKey}`);
+  }
   const response = await fetch(`${url}/rest/v1/${path}`, {
     ...init,
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
-      "Content-Type": "application/json",
-      Prefer: "return=representation",
-      ...init?.headers,
-    },
+    headers,
     cache: "no-store",
   });
 

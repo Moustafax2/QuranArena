@@ -56,7 +56,7 @@ export function PrivacyGate({ children }: { children: ReactNode }) {
         <label className="block"><input type="radio" name="age" value="no" checked={age === "no"} onChange={() => setAge("no")} /> No</label>
       </fieldset>
       {age !== "no" && <div className="mt-6 space-y-4">
-        <label className="flex items-start gap-3"><input className="mt-1" type="checkbox" checked={noticeRead} onChange={e => setNoticeRead(e.target.checked)} /><span>I have read the draft <Link className="text-emerald-400 underline" href="/privacy">Privacy Policy</Link> and <Link className="text-emerald-400 underline" href="/terms">Terms</Link>. If I am below the age of majority, I have a parent or guardian’s permission.</span></label>
+        <label className="flex items-start gap-3"><input className="mt-1" type="checkbox" checked={noticeRead} onChange={e => setNoticeRead(e.target.checked)} /><span>I have read the <Link className="text-emerald-400 underline" href="/privacy">Privacy Policy</Link> and <Link className="text-emerald-400 underline" href="/terms">Terms</Link>. If I am below the age of majority, I have a parent or guardian’s permission.</span></label>
         <label className="flex items-start gap-3"><input className="mt-1" type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} /><span>I explicitly consent to QuranArena processing my religious learning data for these features, including saving and syncing my activity. I can withdraw this consent in Privacy controls.</span></label>
       </div>}
       {error && <p role="alert" className="mt-4 text-red-300">{error}</p>}

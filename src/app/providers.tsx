@@ -8,7 +8,7 @@ import { PrivacyGate } from "@/components/legal/PrivacyGate";
 
 export function Providers({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const publicPage = pathname === "/privacy" || pathname === "/terms" || pathname === "/privacy/controls";
+  const publicPage = pathname === "/privacy" || pathname === "/terms" || pathname === "/privacy/controls" || pathname === "/credits";
   return (
     <>
       <ServiceWorkerRegister />

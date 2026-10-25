@@ -15,6 +15,7 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { attachConsent } from "@/lib/privacy/consent";
 
 const SESSION_COOKIE = "qf_session";
+const ID_TOKEN_COOKIE = "qf_id_token";
 const TXN_COOKIE = "qf_login_txn";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
 const TXN_TTL_SECONDS = 60 * 15;
@@ -87,11 +88,19 @@ export async function writeEncryptedCookie(
   value: unknown,
   maxAge: number
 ) {
-  cookieStore.set(name, await encryptValue(value), getCookieSecurityOptions(maxAge));
+  const encrypted = await encryptValue(value);
+  // Browsers commonly reject individual cookies around 4 KiB. Keep a small
+  // margin for the cookie name and attributes so a successful OAuth callback
+  // cannot silently produce a session that the browser refuses to store.
+  if (Buffer.byteLength(`${name}=${encrypted}`, "utf8") > 3800) {
+    throw new Error(`Encrypted ${name} cookie is too large.`);
+  }
+  cookieStore.set(name, encrypted, getCookieSecurityOptions(maxAge));
 }
 
 export function clearQfCookies(cookieStore: ResponseCookies) {
   cookieStore.set(SESSION_COOKIE, "", { ...getCookieSecurityOptions(0), maxAge: 0 });
+  cookieStore.set(ID_TOKEN_COOKIE, "", { ...getCookieSecurityOptions(0), maxAge: 0 });
   cookieStore.set(TXN_COOKIE, "", { ...getCookieSecurityOptions(0), maxAge: 0 });
 }
 
@@ -114,14 +123,30 @@ export async function readLoginTransactionCookie(): Promise<QfLoginTransaction |
 }
 
 export async function writeSessionCookie(cookieStore: ResponseCookies, session: QfSession) {
-  await writeEncryptedCookie(cookieStore, SESSION_COOKIE, session, SESSION_TTL_SECONDS);
+  const { id_token: idToken, ...storedSession } = session;
+  await writeEncryptedCookie(cookieStore, SESSION_COOKIE, storedSession, SESSION_TTL_SECONDS);
+  if (idToken) {
+    await writeEncryptedCookie(cookieStore, ID_TOKEN_COOKIE, idToken, SESSION_TTL_SECONDS);
+  } else {
+    cookieStore.set(ID_TOKEN_COOKIE, "", { ...getCookieSecurityOptions(0), maxAge: 0 });
+  }
 }
 
 export async function readSessionCookie(): Promise<QfSession | null> {
   const cookieStore = await cookies();
   const raw = cookieStore.get(SESSION_COOKIE)?.value;
   if (!raw) return null;
-  const session = await decryptValue<QfSession>(raw);
+  // Accept the legacy single-cookie shape during the rollout, then rewrite it
+  // in the split form the next time the session route succeeds.
+  const stored = await decryptValue<QfSession | Omit<QfSession, "id_token">>(raw);
+  if (!stored) return null;
+  const separateIdToken = cookieStore.get(ID_TOKEN_COOKIE)?.value;
+  const idToken = "id_token" in stored
+    ? stored.id_token
+    : separateIdToken
+      ? await decryptValue<string>(separateIdToken)
+      : null;
+  const session: QfSession = { ...stored, id_token: idToken ?? "" };
   if (!session || !Number.isFinite(session.issued_at) || session.issued_at > Date.now() || Date.now() - session.issued_at > SESSION_TTL_SECONDS * 1000) return null;
   return session;
 }

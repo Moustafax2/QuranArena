@@ -46,8 +46,14 @@ export default function LoginPageClient({
 
       const payload = (await response.json().catch(() => null)) as {
         authorizationUrl?: string;
+        loginUrl?: string;
         error?: string;
       } | null;
+
+      if (response.status === 409 && payload?.loginUrl) {
+        window.location.href = payload.loginUrl;
+        return;
+      }
 
       if (!response.ok || !payload?.authorizationUrl) {
         throw new Error(payload?.error ?? "Failed to start Quran.com login.");
