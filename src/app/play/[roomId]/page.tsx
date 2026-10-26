@@ -9,7 +9,7 @@ import { useRoom } from "@/lib/hooks/useRoom";
 import { useGame } from "@/lib/hooks/useGame";
 import { UserInvitePicker } from "@/components/social/UserInvitePicker";
 import { BookmarkButton } from "@/components/ui/BookmarkButton";
-import { createClient } from "@/lib/supabase/client";
+
 import { CHAPTERS_DATA } from "@/lib/data/chapters-data";
 import { useBookmarks } from "@/lib/hooks/useBookmarks";
 import type { Database } from "@/lib/supabase/types";
@@ -22,7 +22,6 @@ interface Props {
 }
 
 type RoomInfo = Database["public"]["Tables"]["rooms"]["Row"];
-type ActiveGameLookup = Pick<Database["public"]["Tables"]["games"]["Row"], "id">;
 type RoomMembershipStatus = "loading" | "active" | "left" | "missing";
 type GameRoundReviewRow = Pick<
   Database["public"]["Tables"]["game_rounds"]["Row"],
@@ -136,35 +135,11 @@ function GameReviewSection({ gameId, playerId }: GameReviewSectionProps) {
       setReviewError(null);
 
       try {
-        const supabase = createClient();
-        const roundsResponse = await supabase
-          .from("game_rounds")
-          .select(
-            "id, round_number, prompt_verse_key, correct_verse_key, prompt_text, correct_text, options"
-          )
-          .eq("game_id", gameId!)
-          .order("round_number", { ascending: true });
-
-        if (roundsResponse.error) {
-          throw new Error("Failed to load review questions.");
-        }
-
-        const rounds = (roundsResponse.data ?? []) as GameRoundReviewRow[];
-        const roundIds = rounds.map((round) => round.id);
-        let answers: RoundAnswerReviewRow[] = [];
-
-        if (roundIds.length > 0) {
-          const answersResponse = await supabase
-            .from("round_answers")
-            .select("round_id, player_id, answer_verse_key, is_correct, points_awarded")
-            .in("round_id", roundIds);
-
-          if (answersResponse.error) {
-            throw new Error("Failed to load your answers.");
-          }
-
-          answers = (answersResponse.data ?? []) as RoundAnswerReviewRow[];
-        }
+        const response = await fetch('/api/multiplayer/state?game=' + encodeURIComponent(gameId!), { cache: 'no-store' });
+        if (!response.ok) throw new Error('Review unavailable. Active room membership required.');
+        const data = await response.json();
+        const rounds = data.rounds.filter((r: { ended_at: string | null }) => r.ended_at || data.game.ended_at) as GameRoundReviewRow[];
+        const answers = data.answers as RoundAnswerReviewRow[];
 
         if (cancelled) return;
 
@@ -487,6 +462,7 @@ export default function GameRoomPage({ params, searchParams }: Props) {
   const { player, isAuthenticated, loading: authLoading, refresh } = useAuth();
   const [guestPlayerId, setGuestPlayerId] = useState<string | null>(null);
   const [roomInfo, setRoomInfo] = useState<RoomInfo | null>(null);
+  const roomPrimaryId = roomInfo?.id;
   const [gameId, setGameId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
@@ -502,36 +478,10 @@ export default function GameRoomPage({ params, searchParams }: Props) {
   const [selectedInvitees, setSelectedInvitees] = useState<SocialUserSummary[]>([]);
 
   const fetchActiveGame = useCallback(async (roomPrimaryId: string) => {
-    const supabase = createClient();
-    const activeGameResponse = await supabase
-      .from("games")
-      .select("id")
-      .eq("room_id", roomPrimaryId)
-      .is("ended_at", null)
-      .order("started_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const activeGame = activeGameResponse.data as ActiveGameLookup | null;
-
-    if (activeGame?.id) {
-      setGameId(activeGame.id);
-      return activeGame.id;
-    }
-
-    const latestGameResponse = await supabase
-      .from("games")
-      .select("id")
-      .eq("room_id", roomPrimaryId)
-      .order("started_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const latestGame = latestGameResponse.data as ActiveGameLookup | null;
-
-    if (latestGame?.id) {
-      setGameId(latestGame.id);
-      return latestGame.id;
-    }
-
+    const response = await fetch('/api/multiplayer/state?room=' + encodeURIComponent(roomPrimaryId), { cache: 'no-store' });
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (data.game?.id) { setGameId(data.game.id); return data.game.id as string; }
     return null;
   }, []);
 
@@ -549,14 +499,10 @@ export default function GameRoomPage({ params, searchParams }: Props) {
   // Fetch room info on mount
   useEffect(() => {
     async function fetchRoom() {
-      const supabase = createClient();
-      const roomResponse = await supabase
-        .from("rooms")
-        .select("*")
-        .eq("code", roomId)
-        .single();
-      const data = roomResponse.data as RoomInfo | null;
-      const fetchError = roomResponse.error;
+      const response = await fetch('/api/multiplayer/state?code=' + encodeURIComponent(roomId), { cache: 'no-store' });
+      const payload = await response.json();
+      const data = payload.room as RoomInfo | null;
+      const fetchError = !response.ok;
 
       if (fetchError || !data) {
         setError("Room not found");
@@ -570,35 +516,6 @@ export default function GameRoomPage({ params, searchParams }: Props) {
   }, [fetchActiveGame, roomId]);
 
   useEffect(() => {
-    if (!roomInfo?.id) return;
-
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`room-meta:${roomInfo.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "rooms",
-          filter: `id=eq.${roomInfo.id}`,
-        },
-        ({ new: updatedRoom }) => {
-          const nextRoom = updatedRoom as RoomInfo;
-          setRoomInfo(nextRoom);
-          if (nextRoom.status === "in_progress") {
-            void fetchActiveGame(nextRoom.id);
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [fetchActiveGame, roomInfo?.id]);
-
-  useEffect(() => {
     if (loading || authLoading) return;
     if (!roomInfo?.id) return;
 
@@ -610,13 +527,10 @@ export default function GameRoomPage({ params, searchParams }: Props) {
     let cancelled = false;
 
     async function fetchMembership() {
-      const supabase = createClient();
-      const membershipResponse = await supabase
-        .from("room_players")
-        .select("status")
-        .eq("room_id", roomInfo!.id)
-        .eq("player_id", player!.id)
-        .maybeSingle();
+      const response = await fetch('/api/multiplayer/state?code=' + encodeURIComponent(roomId), { cache: 'no-store' });
+      const data = await response.json();
+      const membershipResponse = { data: response.ok && data.membership !== 'missing' ? { status: data.membership } : null };
+      if (response.ok && data.room) setRoomInfo(data.room);
 
       if (cancelled) return;
 
@@ -641,7 +555,7 @@ export default function GameRoomPage({ params, searchParams }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, loading, player?.id, roomInfo?.id]);
+  }, [authLoading, loading, player?.id, roomInfo?.id, roomId]);
 
   const buildMultiplayerHeaders = useCallback((): Record<string, string> => {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -673,7 +587,7 @@ export default function GameRoomPage({ params, searchParams }: Props) {
       keepalive = false,
       suppressErrors = false,
     }: { keepalive?: boolean; suppressErrors?: boolean } = {}) => {
-      if (!roomInfo?.id || !player?.id || hasLeftRef.current) {
+      if (!roomPrimaryId || !player?.id || hasLeftRef.current) {
         return true;
       }
 
@@ -683,7 +597,7 @@ export default function GameRoomPage({ params, searchParams }: Props) {
         const request = fetch("/api/multiplayer/leave-room", {
           method: "POST",
           headers: buildMultiplayerHeaders(),
-          body: JSON.stringify({ room_id: roomInfo!.id }),
+          body: JSON.stringify({ room_id: roomPrimaryId! }),
           keepalive,
         });
 
@@ -708,7 +622,7 @@ export default function GameRoomPage({ params, searchParams }: Props) {
         return false;
       }
     },
-    [buildMultiplayerHeaders, player?.id, roomInfo?.id]
+    [buildMultiplayerHeaders, player?.id, roomPrimaryId]
   );
 
   useEffect(() => {
@@ -759,7 +673,7 @@ export default function GameRoomPage({ params, searchParams }: Props) {
   ]);
 
   useEffect(() => {
-    if (membershipStatus !== "active" || !roomInfo?.id || !player?.id) return;
+    if (membershipStatus !== "active" || !roomPrimaryId || !player?.id) return;
 
     let cancelled = false;
 
@@ -768,7 +682,7 @@ export default function GameRoomPage({ params, searchParams }: Props) {
         await fetch("/api/multiplayer/heartbeat-room", {
           method: "POST",
           headers: buildMultiplayerHeaders(),
-          body: JSON.stringify({ room_id: roomInfo!.id }),
+          body: JSON.stringify({ room_id: roomPrimaryId! }),
         });
       } catch {
         if (!cancelled) {
@@ -786,54 +700,28 @@ export default function GameRoomPage({ params, searchParams }: Props) {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [buildMultiplayerHeaders, membershipStatus, player?.id, roomInfo?.id]);
+  }, [buildMultiplayerHeaders, membershipStatus, player?.id, roomPrimaryId]);
 
   useEffect(() => {
-    if (!roomInfo?.id || membershipStatus !== "active" || gameId) return;
-
-    const supabase = createClient();
-    const interval = window.setInterval(async () => {
-      const roomResponse = await supabase
-        .from("rooms")
-        .select("*")
-        .eq("id", roomInfo.id)
-        .maybeSingle();
-
-      const latestRoom = roomResponse.data as RoomInfo | null;
-      if (!latestRoom) return;
-
-      setRoomInfo(latestRoom);
-      await fetchActiveGame(latestRoom.id);
-    }, 2000);
-
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [fetchActiveGame, gameId, membershipStatus, roomInfo?.id]);
-
-  // Watch for the host starting the game — lets non-host players transition
-  // automatically without needing to refresh.
-  useEffect(() => {
-    if (gameId || !roomInfo?.id) return;
-
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`room-events:${roomInfo.id}`)
-      .on("broadcast", { event: "room_event" }, ({ payload }) => {
-        const event = payload as { type: string; payload: { game_id: string } };
-        if (event.type === "game:started" && event.payload.game_id) {
-          setGameId(event.payload.game_id);
-        }
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [roomInfo?.id, gameId]);
+    if (!roomPrimaryId || membershipStatus !== 'active') return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      try {
+        const response = await fetch('/api/multiplayer/state?room=' + encodeURIComponent(roomPrimaryId!), { cache: 'no-store' });
+        const data = await response.json();
+        if (!cancelled && response.ok) { setRoomInfo(data.room); if (data.game?.id) setGameId(data.game.id); }
+        if (!cancelled && response.status === 403) setMembershipStatus('missing');
+      } catch { /* Retry transient failures without replacing the current game. */ }
+      finally { if (!cancelled) timer = setTimeout(poll, 2000); }
+    }
+    void poll();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [membershipStatus, roomPrimaryId]);
 
   // Realtime hooks
   const { players, isConnected } = useRoom(
-    membershipStatus === "active" ? roomInfo?.id ?? null : null,
-    roomInfo?.host_id ?? null
+    membershipStatus === "active" ? roomInfo?.id ?? null : null
   );
 
   const { gameState, submitAnswer, pressBuzzer } = useGame(

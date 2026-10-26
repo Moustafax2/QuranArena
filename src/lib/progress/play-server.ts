@@ -16,7 +16,9 @@ const verseMetaCache = new Map<
   Promise<{ surahId: number | null; juzNumber: number | null; pageNumber: number | null }>
 >();
 
+let metaCacheExpires = Date.now() + 3600000;
 async function fetchVerseMeta(verseKey: string) {
+  if (Date.now() >= metaCacheExpires) { verseMetaCache.clear(); metaCacheExpires = Date.now() + 3600000; }
   if (verseMetaCache.has(verseKey)) {
     return verseMetaCache.get(verseKey)!;
   }
@@ -36,7 +38,7 @@ async function fetchVerseMeta(verseKey: string) {
     try {
       const response = await fetch(
         `${QURAN_API}/verses/by_key/${verseKey}?language=en&fields=page_number,juz_number`,
-        { cache: "force-cache" }
+        { next: { revalidate: 3600 } }
       );
       if (!response.ok) {
         return { surahId, juzNumber: null, pageNumber: null };

@@ -1,3 +1,4 @@
+import { requireAppServer } from "../_shared/server-auth.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import {
   createAdminClient,
@@ -17,6 +18,9 @@ serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
+
+  const denied = await requireAppServer(req);
+  if (denied) return denied;
 
   try {
     const { player_id, game_mode, settings } = await req.json();

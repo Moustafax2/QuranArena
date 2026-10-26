@@ -16,6 +16,7 @@ interface AuthState {
   player: Player | null;
   user: AuthUser | null;
   isAuthenticated: boolean;
+  bookmarkSync: boolean;
   isGuest: boolean;
   loading: boolean;
   logout: () => Promise<void>;
@@ -23,6 +24,7 @@ interface AuthState {
 }
 
 interface SessionResponse {
+  bookmarkSync?: boolean;
   isAuthenticated: boolean;
   user: AuthUser | null;
   player: Player | null;
@@ -35,6 +37,7 @@ export function useAuth(): AuthState {
     player: null,
     user: null,
     isAuthenticated: false,
+    bookmarkSync: false,
     isGuest: false,
     loading: true,
   });
@@ -42,14 +45,17 @@ export function useAuth(): AuthState {
   const loadSession = useCallback(async () => {
     try {
       const response = await fetch("/api/auth/qf/session", { cache: "no-store" });
+      if (!response.ok) throw new Error("Session unavailable.");
       const payload = (await response.json()) as SessionResponse;
 
       if (!payload.isAuthenticated && typeof window !== "undefined") {
-        const raw = sessionStorage.getItem(GUEST_STORAGE_KEY);
-        if (raw) {
-          const guestPlayer = JSON.parse(raw) as Player;
+        const guestResponse = await fetch("/api/multiplayer/guest-token", { cache: "no-store" });
+        const guestPlayer = guestResponse.ok ? await guestResponse.json() as Player | null : null;
+        if (guestPlayer) {
+          sessionStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(guestPlayer));
           return { ...payload, player: guestPlayer, isGuest: true };
         }
+        sessionStorage.removeItem(GUEST_STORAGE_KEY);
       }
 
       return { ...payload, isGuest: false };
@@ -74,6 +80,7 @@ export function useAuth(): AuthState {
         player: payload.player,
         user: payload.user,
         isAuthenticated: payload.isAuthenticated,
+        bookmarkSync: "bookmarkSync" in payload && payload.bookmarkSync === true,
         isGuest: payload.isGuest,
         loading: false,
       });
@@ -92,6 +99,7 @@ export function useAuth(): AuthState {
       player: payload.player,
       user: payload.user,
       isAuthenticated: payload.isAuthenticated,
+      bookmarkSync: "bookmarkSync" in payload && payload.bookmarkSync === true,
       isGuest: payload.isGuest,
       loading: false,
     });

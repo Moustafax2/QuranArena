@@ -41,7 +41,8 @@ interface RemoteBookmarkResponse {
 }
 
 export function useBookmarks() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated: signedIn, bookmarkSync } = useAuth();
+  const isAuthenticated = signedIn && bookmarkSync;
   const [localBookmarks, setLocalBookmarks] = useState<Bookmark[]>([]);
   const [remoteBookmarks, setRemoteBookmarks] = useState<Bookmark[]>([]);
   const [loading, setLoading] = useState(true);
