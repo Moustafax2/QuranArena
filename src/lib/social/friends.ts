@@ -216,7 +216,7 @@ export async function searchLocalPlayers(
     .select("*")
     .not("quran_foundation_uid", "is", null)
     .neq("id", currentPlayerId)
-    .or(`display_name.ilike.${pattern},qf_email.ilike.${pattern}`)
+    .ilike("display_name", pattern)
     .order("last_login_at", { ascending: false })
     .limit(limit);
 

@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
       codeVerifier: txn.code_verifier,
     });
 
-    const session = await createSessionFromTokenResponse(tokens, txn.nonce);
+    const session = await createSessionFromTokenResponse(tokens, txn.nonce, txn.scopes);
     const redirectUrl = new URL(txn.redirect_to || "/", getAppBaseUrl());
     const response = NextResponse.redirect(redirectUrl);
 

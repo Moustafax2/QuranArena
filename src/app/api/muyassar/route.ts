@@ -18,7 +18,6 @@ function getDB(): Record<string, MuyassarRawEntry> {
   if (cachedDB) return cachedDB;
   const filePath = path.join(
     process.cwd(),
-    "public",
     "data",
     "al-muyassar-fi-al-gharib.json"
   );

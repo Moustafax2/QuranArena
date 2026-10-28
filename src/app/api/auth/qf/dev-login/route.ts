@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { QfSession } from "@/lib/qf-user/types";
 import { clearQfCookies, writeSessionCookie } from "@/lib/qf-user/session";
 import { isDevAuthEnabled } from "@/lib/qf-user/dev-auth";
+import { attachConsent } from "@/lib/privacy/consent";
 import {
   getPlayerById,
   getPlayerByQfSub,
@@ -61,6 +62,8 @@ export async function POST(request: NextRequest) {
   }
 
   const session: QfSession = {
+    issued_at: Date.now(),
+    session_version: player.session_version ?? 0,
     access_token: "dev-access-token",
     refresh_token: null,
     id_token: "dev-id-token",
@@ -83,6 +86,7 @@ export async function POST(request: NextRequest) {
     },
   });
 
+  await attachConsent(player.id);
   clearQfCookies(response.cookies);
   await writeSessionCookie(response.cookies, session);
 

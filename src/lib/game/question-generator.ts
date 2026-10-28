@@ -86,7 +86,7 @@ async function fetchVersePage(
   }
 
   const res = await fetch(`${QURAN_API}${path}?${params.toString()}`, {
-    cache: "force-cache",
+    next: { revalidate: 3600 },
   });
 
   if (!res.ok) {
