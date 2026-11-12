@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createPkceChallenge, createRandomString } from "@/lib/qf-user/pkce";
+import { fetchConsentStatus, saveConsent } from "@/lib/privacy/consent-client";
+import { ConsentChoice, UnderageNotice } from "@/components/legal/ConsentChoice";
 
 interface LoginPageClientProps {
   errorMessage: string | null;
@@ -16,6 +18,32 @@ export default function LoginPageClient({
   const [loading, setLoading] = useState(false);
   const [bookmarks, setBookmarks] = useState(false);
   const [error, setError] = useState<string | null>(errorMessage);
+  // Sign-in is where QuranArena asks for its one religious-data consent.
+  // "unknown" until checked; "given" hides the box for returning users.
+  const [consentState, setConsentState] = useState<"unknown" | "needed" | "given" | "underage">("unknown");
+  const [consent, setConsent] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    fetchConsentStatus()
+      .then((status) => {
+        if (active) setConsentState(status.underage ? "underage" : status.accepted ? "given" : "needed");
+      })
+      .catch(() => { if (active) setConsentState("needed"); });
+    return () => { active = false; };
+  }, []);
+
+  async function handleUnderage() {
+    setLoading(true);
+    setError(null);
+    try {
+      if (await saveConsent(false) === "underage") setConsentState("underage");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save your choice.");
+    } finally {
+      setLoading(false);
+    }
+  }
   const safeNextPath = useMemo(
     () => (nextPath.startsWith("/") ? nextPath : "/"),
     [nextPath]
@@ -26,6 +54,11 @@ export default function LoginPageClient({
     setError(null);
 
     try {
+      if (consentState !== "given") {
+        if (await saveConsent(true) !== "accepted") throw new Error("Could not save your consent.");
+        setConsentState("given");
+      }
+
       const state = createRandomString();
       const nonce = createRandomString();
       const codeVerifier = createRandomString(64);
@@ -86,18 +119,30 @@ export default function LoginPageClient({
             </div>
           )}
 
-          <p className="mt-6 text-sm leading-6 text-gray-400">
-            Review our <Link href="/privacy" className="text-emerald-400 underline">Privacy Policy</Link> and{" "}
-            <Link href="/terms" className="text-emerald-400 underline">Terms of Service</Link> before connecting your account.
-          </p>
+          {consentState === "underage" ? (
+            <div className="mt-6"><UnderageNotice /></div>
+          ) : (
+            <>
+              {consentState === "needed" && (
+                <div className="mt-6">
+                  <ConsentChoice
+                    checked={consent}
+                    onChange={setConsent}
+                    onUnderage={() => void handleUnderage()}
+                    disabled={loading}
+                  />
+                </div>
+              )}
 
-          <label className="mt-5 flex items-start gap-3 text-sm text-gray-300">
-            <input type="checkbox" checked={bookmarks} onChange={e => setBookmarks(e.target.checked)} />
-            Connect my Quran.com bookmarks (optional). You can add this permission later by signing in again.
-          </label>
+              <label className="mt-5 flex items-start gap-3 text-sm text-gray-300">
+                <input type="checkbox" checked={bookmarks} onChange={e => setBookmarks(e.target.checked)} />
+                Connect my Quran.com bookmarks (optional). You can add this permission later by signing in again.
+              </label>
+            </>
+          )}
           <button
             onClick={() => void handleLogin()}
-            disabled={loading}
+            disabled={loading || consentState === "unknown" || consentState === "underage" || (consentState === "needed" && !consent)}
             className="mt-8 flex w-full items-center justify-center rounded-2xl bg-emerald-600 px-5 py-3 text-base font-semibold text-white transition-colors hover:bg-emerald-500 disabled:opacity-60"
           >
             {loading ? "Redirecting..." : "Continue with Quran.com"}

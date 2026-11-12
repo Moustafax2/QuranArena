@@ -42,12 +42,22 @@ async function main() {
   const { proxy } = loadWithMocks("../src/proxy.ts", {
     "@/lib/privacy/consent": { getConsentReceipt: async () => active ? { id: "receipt" } : null },
   });
-  assert.equal((await proxy(new NextRequest("https://app.test/api/progress"))).status, 403);
+  const signedInRequest = (url) => new NextRequest(url, { headers: { cookie: "qf_session=encrypted" } });
+  // Guests (no QF session) are not asked for consent; signed-in requests are.
+  assert.equal((await proxy(new NextRequest("https://app.test/api/progress"))).status, 200);
+  assert.equal((await proxy(new NextRequest("https://app.test/api/multiplayer/guest-token", { method: "POST", headers: { origin: "https://app.test" } }))).status, 200);
+  assert.equal((await proxy(signedInRequest("https://app.test/api/progress"))).status, 403);
+  const underage = await tokens.signPrivacyToken("consent", { eligible: false }, 60);
+  const underageRequest = (url) => new NextRequest(url, { headers: { cookie: `${tokens.CONSENT_COOKIE}=${underage}` } });
+  assert.equal((await proxy(underageRequest("https://app.test/api/progress"))).status, 403);
+  assert.equal((await proxy(underageRequest("https://app.test/api/quran/verse-recitation/7/1"))).status, 200);
   assert.equal((await proxy(new NextRequest("https://app.test/api/privacy/export"))).status, 200);
   assert.equal((await proxy(new NextRequest("https://app.test/api/auth/callback?code=test&state=test"))).status, 200);
+  assert.equal((await proxy(new NextRequest("https://app.test/api/quran/verse-recitation/7/1"))).status, 200);
+  assert.equal((await proxy(new NextRequest("https://app.test/api/auth/qf/login", { method: "POST", headers: { origin: "https://app.test" } }))).status, 403);
   assert.equal((await proxy(new NextRequest("https://app.test/api/privacy/delete", { method: "POST", headers: { origin: "https://evil.test" } }))).status, 403);
   active = true;
-  const allowed = await proxy(new NextRequest("https://app.test/api/progress"));
+  const allowed = await proxy(signedInRequest("https://app.test/api/progress"));
   assert.equal(allowed.status, 200); assert.match(allowed.headers.get("cache-control"), /no-store/);
   let identity = null;
   let deleteFails = false;

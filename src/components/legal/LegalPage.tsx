@@ -7,10 +7,11 @@ export interface LegalSection {
   content: ReactNode;
 }
 
-export function LegalPage({ title, description, sections }: {
+export function LegalPage({ title, description, sections, lastUpdated = "October 25, 2026" }: {
   title: string;
   description: string;
   sections: LegalSection[];
+  lastUpdated?: string;
 }) {
   return (
     <article className="mx-auto max-w-4xl px-4 py-12 text-gray-300 sm:px-6 sm:py-16">
@@ -19,7 +20,7 @@ export function LegalPage({ title, description, sections }: {
         <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">QuranArena · Legal</p>
         <h1 className="mt-3 text-4xl font-bold tracking-tight text-white sm:text-5xl">{title}</h1>
         <p className="mt-4 text-lg leading-8">{description}</p>
-        <p className="mt-4 text-sm text-gray-400">Effective: October 25, 2026 · Last updated: October 25, 2026</p>
+        <p className="mt-4 text-sm text-gray-400">Effective: October 25, 2026 · Last updated: {lastUpdated}</p>
       </header>
       <nav aria-label={`${title} contents`} className="my-10 rounded-2xl border border-gray-800 bg-gray-900/50 p-6">
         <h2 className="font-semibold text-white">On this page</h2>
