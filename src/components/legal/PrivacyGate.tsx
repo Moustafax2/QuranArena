@@ -6,12 +6,10 @@ import { ConsentChoice, UnderageNotice } from "./ConsentChoice";
 
 type Status = "loading" | "accepted" | "pending" | "underage";
 
-// Consent is requested only where religious data is processed, as the QF
-// developers advised: browsing and reading stay open. `required` marks study
-// and game features that save data (guest play included); signed-in users
-// already gave consent on the sign-in page, and are asked again only if it
-// was withdrawn or has expired.
-export function PrivacyGate({ children, required }: { children: ReactNode; required: boolean }) {
+// Consent is collected on the sign-in page, so visitors and guests are never
+// blocked. This only prompts a signed-in user whose consent was withdrawn or
+// has expired, since their account features would otherwise fail.
+export function PrivacyGate({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>("loading");
   const [signedIn, setSignedIn] = useState(false);
   const [consent, setConsent] = useState(false);
@@ -22,7 +20,8 @@ export function PrivacyGate({ children, required }: { children: ReactNode; requi
     let guest = false;
     const activity = () => { if (guest) touchGuestStorage(); };
     const check = () => fetchConsentStatus().then(data => {
-      guest = data.accepted && !data.account;
+      // Guest browser data expires after inactivity, consent or not.
+      guest = !data.signedIn;
       if (guest) checkGuestStorage();
       if (!active) return;
       setSignedIn(data.signedIn);
@@ -49,8 +48,7 @@ export function PrivacyGate({ children, required }: { children: ReactNode; requi
   }
 
   if (status === "accepted") return children;
-  const blocking = required || signedIn;
-  if (!blocking) return children;
+  if (!signedIn) return children;
 
   return <main className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10 text-gray-200">
     <div className="w-full max-w-md rounded-2xl border border-gray-800 bg-gray-900/70 p-6 shadow-xl">
