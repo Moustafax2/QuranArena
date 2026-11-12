@@ -11,7 +11,10 @@ export async function proxy(request: NextRequest) {
   }
   // Privacy rights remain available after consent is withdrawn. Each handler
   // still verifies identity and its own input; this is not an auth bypass.
-  const exempt = path.startsWith("/api/privacy/") || path === "/api/auth/qf/logout" || path === "/api/auth/callback";
+  // Quran recitation routes only proxy public content (no player data), so
+  // reading and listening work before consent.
+  const exempt = path.startsWith("/api/privacy/") || path === "/api/auth/qf/logout" || path === "/api/auth/callback" ||
+    path.startsWith("/api/quran/");
   if (!exempt) {
     try {
       if (!await getConsentReceipt(request.cookies.get(CONSENT_COOKIE)?.value ?? "")) {

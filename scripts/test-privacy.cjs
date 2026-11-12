@@ -45,6 +45,8 @@ async function main() {
   assert.equal((await proxy(new NextRequest("https://app.test/api/progress"))).status, 403);
   assert.equal((await proxy(new NextRequest("https://app.test/api/privacy/export"))).status, 200);
   assert.equal((await proxy(new NextRequest("https://app.test/api/auth/callback?code=test&state=test"))).status, 200);
+  assert.equal((await proxy(new NextRequest("https://app.test/api/quran/verse-recitation/7/1"))).status, 200);
+  assert.equal((await proxy(new NextRequest("https://app.test/api/auth/qf/login", { method: "POST", headers: { origin: "https://app.test" } }))).status, 403);
   assert.equal((await proxy(new NextRequest("https://app.test/api/privacy/delete", { method: "POST", headers: { origin: "https://evil.test" } }))).status, 403);
   active = true;
   const allowed = await proxy(new NextRequest("https://app.test/api/progress"));

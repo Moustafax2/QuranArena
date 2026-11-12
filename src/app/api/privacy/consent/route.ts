@@ -3,6 +3,7 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getConsentReceipt } from "@/lib/privacy/consent";
 import { CONSENT_COOKIE, CONSENT_VERSION, COOKIE_OPTIONS, signPrivacyToken, verifyPrivacyToken } from "@/lib/privacy/tokens";
 import { privacyIdentity } from "@/lib/privacy/account";
+import { readSessionCookie } from "@/lib/qf-user/session";
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,7 +11,8 @@ export async function GET(request: NextRequest) {
     const token = await verifyPrivacyToken(raw, "consent");
     const receipt = await getConsentReceipt(raw ?? "");
     const identity = receipt ? await privacyIdentity() : null;
-    return NextResponse.json({ accepted: Boolean(receipt), account: Boolean(identity?.session), underage: token?.eligible === false, version: CONSENT_VERSION });
+    const signedIn = Boolean(identity?.session ?? await readSessionCookie());
+    return NextResponse.json({ accepted: Boolean(receipt), account: Boolean(identity?.session), signedIn, underage: token?.eligible === false, version: CONSENT_VERSION });
   } catch {
     return NextResponse.json({ error: "Privacy controls are temporarily unavailable." }, { status: 503 });
   }
