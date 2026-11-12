@@ -5,14 +5,12 @@ Status: implementation and proposed procedures, October 25, 2026. Operator/inbox
 ## Deployment order
 
 Production website: https://www.quranarena.ca/ (owner confirmed October 25, 2026).
-Until QF registers the new callback, set Vercel Production
-`APP_URL=https://quran-hackathon.vercel.app` and initiate QF login on that same
-origin. The app redirects attempted login from another origin to the configured
-login origin so OAuth transaction cookies cannot be split across domains. After
-QF confirms the change, set `APP_URL=https://www.quranarena.ca`, remove or update
-any stale `NEXT_PUBLIC_APP_URL`, and register the exact QF callback
-`https://www.quranarena.ca/api/auth/callback` with the QF client for the configured
-issuer. If provider logout is enabled, register and set
+Register the exact QF callback `https://www.quranarena.ca/api/auth/callback` as
+a redirect URI on the QF OAuth client for the configured issuer, then set Vercel
+Production `APP_URL=https://www.quranarena.ca` and remove or update any stale
+`NEXT_PUBLIC_APP_URL`. The app redirects attempted login from another origin
+(for example the legacy `quran-hackathon.vercel.app`) to the configured login
+origin so OAuth transaction cookies cannot be split across domains. If provider logout is enabled, register and set
 `QF_POST_LOGOUT_REDIRECT_URI=https://www.quranarena.ca` too. Do not change QF_ENV
 solely because the public domain changed: it must match the issued credentials.
 Make www the canonical domain and verify apex/legacy domain redirects. Keep

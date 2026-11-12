@@ -45,7 +45,8 @@ async function request<T>(
   path: string,
   init?: RequestInit
 ): Promise<T> {
-  if (path.startsWith("/bookmarks") && !session.scopes?.split(" ").includes("bookmark")) {
+  const touchesBookmarks = path.startsWith("/bookmarks") || /^\/collections\/[^/]+\/bookmarks/.test(path);
+  if (touchesBookmarks && !session.scopes?.split(" ").includes("bookmark")) {
     throw new QfUserApiError("Connect bookmark permission from the sign-in page first.", 403);
   }
   const baseUrl = getQfUserApiBaseUrl();
@@ -146,11 +147,34 @@ export async function addUserBookmark(
   });
 }
 
+// Quran.com's saved verses live in the virtual Favorites collection.
+const QF_FAVORITES_COLLECTION_ID = "__default__";
+
 export async function deleteUserBookmark(
   session: QfSession,
   bookmarkId: string
 ): Promise<QfBookmarkMutationResponse> {
-  return request<QfBookmarkMutationResponse>(session, `/bookmarks/${bookmarkId}`, {
+  const encodedId = encodeURIComponent(bookmarkId);
+
+  // DELETE /bookmarks/{id} only removes orphan bookmarks. For a bookmark in
+  // Favorites it just clears isReading and still returns 200, so the verse
+  // stays saved on Quran.com. Detach it from Favorites instead; QF deletes the
+  // bookmark itself once it belongs to no collection.
+  try {
+    return await request<QfBookmarkMutationResponse>(
+      session,
+      `/collections/${QF_FAVORITES_COLLECTION_ID}/bookmarks/${encodedId}`,
+      { method: "DELETE" }
+    );
+  } catch (error) {
+    // 404: the bookmark is not in Favorites (a standalone bookmark), so the
+    // plain bookmark delete is the one that removes it.
+    if (!(error instanceof QfUserApiError) || error.status !== 404) {
+      throw error;
+    }
+  }
+
+  return request<QfBookmarkMutationResponse>(session, `/bookmarks/${encodedId}`, {
     method: "DELETE",
   });
 }

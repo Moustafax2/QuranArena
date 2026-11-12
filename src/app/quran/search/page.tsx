@@ -4,14 +4,11 @@ import {
 } from "@/lib/api";
 import { SearchBar } from "@/components/search/SearchBar";
 import Link from "next/link";
+import { translationToPlainText } from "@/lib/quran/translation-text";
 import type { SearchResponse, SearchResult } from "@/lib/types";
 
 interface Props {
   searchParams: Promise<{ q?: string; page?: string }>;
-}
-
-function stripHtml(value: string): string {
-  return value.replace(/<[^>]*>/g, "");
 }
 
 function getVerseHref(result: SearchResult): string {
@@ -92,7 +89,7 @@ export default async function SearchPage({ searchParams }: Props) {
                     href={getNavigationHref(result)}
                     className="rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 transition-colors hover:border-emerald-400"
                   >
-                    {stripHtml(result.name)}
+                    {translationToPlainText(result.name)}
                   </Link>
                 ))}
               </div>
@@ -118,12 +115,12 @@ export default async function SearchPage({ searchParams }: Props) {
                       translate="no"
                       className="font-amiri mb-2 text-lg leading-loose text-gray-100"
                     >
-                      {stripHtml(result.arabic ?? result.name)}
+                      {translationToPlainText(result.arabic ?? result.name)}
                     </p>
                   )}
                   {!result.isArabic && (
                     <p className="text-sm text-gray-400">
-                      {stripHtml(result.name)}
+                      {translationToPlainText(result.name)}
                     </p>
                   )}
                 </Link>
