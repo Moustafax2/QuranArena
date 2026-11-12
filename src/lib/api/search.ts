@@ -1,5 +1,6 @@
 import "server-only";
 
+import { translationToPlainText } from "@/lib/quran/translation-text";
 import {
   QuranApiError,
   quranContentGet,
@@ -53,18 +54,14 @@ function isUnavailableSearchError(error: unknown): boolean {
   );
 }
 
-function stripHtml(value: string): string {
-  return value.replace(/<[^>]*>/g, "");
-}
-
 function normalizeContentSearchResponse(
   response: ContentSearchResponse
 ): SearchResponse {
   const verses: SearchResult[] = response.search.results.map((result) => ({
     result_type: "ayah",
     key: result.verse_key,
-    name: stripHtml(result.translations?.[0]?.text ?? result.highlighted ?? result.text),
-    arabic: stripHtml(result.text),
+    name: translationToPlainText(result.translations?.[0]?.text ?? result.highlighted ?? result.text),
+    arabic: translationToPlainText(result.text),
     isArabic: false,
   }));
 

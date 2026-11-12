@@ -10,11 +10,13 @@ import { writeLoginTransactionCookie } from "@/lib/qf-user/session";
 
 export async function POST(request: NextRequest) {
   try {
+    // Start sign-in on the same origin as the registered callback so the
+    // login transaction cookie is readable when QF redirects back.
     const configuredOrigin = new URL(getAppBaseUrl()).origin;
     if (request.nextUrl.origin !== configuredOrigin) {
       return NextResponse.json(
         {
-          error: `Quran.com sign-in is temporarily available at ${configuredOrigin} while the new callback domain is being registered.`,
+          error: `Quran.com sign-in is available at ${configuredOrigin}.`,
           loginUrl: `${configuredOrigin}/login`,
         },
         { status: 409 }

@@ -6,6 +6,7 @@ import { BookmarkButton } from "@/components/ui/BookmarkButton";
 import { useBookmarks } from "@/lib/hooks/useBookmarks";
 import { useVersePlayer } from "@/contexts/VersePlayerContext";
 import { VersePlayButton } from "@/components/quran/verse-player/VersePlayButton";
+import { stripTranslationFootnotes } from "@/lib/quran/translation-text";
 
 export function VerseDisplay({
   verses,
@@ -74,7 +75,7 @@ export function VerseDisplay({
               <p
                 key={t.id}
                 className="text-base leading-relaxed text-gray-400"
-                dangerouslySetInnerHTML={{ __html: t.text }}
+                dangerouslySetInnerHTML={{ __html: stripTranslationFootnotes(t.text) }}
               />
             ))}
           </div>
