@@ -45,9 +45,17 @@ async function request<T>(
   path: string,
   init?: RequestInit
 ): Promise<T> {
+  const grantedScopes = session.scopes?.split(" ") ?? [];
+  const touchesCollections = path.startsWith("/collections");
   const touchesBookmarks = path.startsWith("/bookmarks") || /^\/collections\/[^/]+\/bookmarks/.test(path);
-  if (touchesBookmarks && !session.scopes?.split(" ").includes("bookmark")) {
+  if (touchesBookmarks && !grantedScopes.includes("bookmark")) {
     throw new QfUserApiError("Connect bookmark permission from the sign-in page first.", 403);
+  }
+  if (touchesCollections && !grantedScopes.includes("collection")) {
+    throw new QfUserApiError(
+      "Removing verses from your Quran.com Favorites needs updated permission. Sign out, then sign in again with bookmark sync turned on.",
+      403
+    );
   }
   const baseUrl = getQfUserApiBaseUrl();
   const response = await fetch(`${baseUrl}/auth/v1${path}`, {
