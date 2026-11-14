@@ -91,8 +91,18 @@ export function getQfUserApiBaseUrl(): string {
   return DEFAULT_USER_API_BASES[getQfEnvironment()];
 }
 
+// Removing a verse from Quran.com Favorites uses the collections API, which
+// needs the `collection` scope. Request it only once QF has approved it for
+// this client: an unapproved scope makes QF reject sign-in with invalid_scope.
+export function isQfCollectionScopeEnabled(): boolean {
+  return process.env.QF_REQUEST_COLLECTION_SCOPE?.trim().toLowerCase() === "true";
+}
+
 export function getQfRequestedScopes(bookmarks = false): string {
-  return ["openid", "offline_access", "user", ...(bookmarks ? ["bookmark"] : [])].join(" ");
+  const bookmarkScopes = bookmarks
+    ? ["bookmark", ...(isQfCollectionScopeEnabled() ? ["collection"] : [])]
+    : [];
+  return ["openid", "offline_access", "user", ...bookmarkScopes].join(" ");
 }
 
 export function getQfSessionSecret(): string {
