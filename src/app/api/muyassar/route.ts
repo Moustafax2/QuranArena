@@ -44,7 +44,33 @@ function parseEntries(html: string): MuyassarParsedEntry[] {
   return results;
 }
 
+function entriesFor(db: Record<string, MuyassarRawEntry>, key: string): MuyassarParsedEntry[] {
+  const entry = db[key];
+  return entry?.text ? parseEntries(entry.text) : [];
+}
+
+// A flashcard checks up to this many example verses for a Muyassar entry.
+const MAX_BATCH = 8;
+const VERSE_KEY = /^\d{1,3}:\d{1,3}$/;
+
 export async function GET(request: NextRequest) {
+  // ?verses=2:5,3:7 answers several verses in one request (audit L18: a card
+  // used to make up to 8 requests one after another).
+  const verses = request.nextUrl.searchParams.get("verses");
+  if (verses !== null) {
+    const keys = verses.split(",");
+    if (keys.length > MAX_BATCH || !keys.every((key) => VERSE_KEY.test(key))) {
+      return NextResponse.json({ error: `verses must be up to ${MAX_BATCH} surah:ayah keys` }, { status: 400 });
+    }
+    try {
+      const db = getDB();
+      return NextResponse.json({ results: Object.fromEntries(keys.map((key) => [key, entriesFor(db, key)])) });
+    } catch (err) {
+      console.error("Muyassar lookup error:", err);
+      return NextResponse.json({ error: "Server error" }, { status: 500 });
+    }
+  }
+
   const surah = request.nextUrl.searchParams.get("surah");
   const ayah = request.nextUrl.searchParams.get("ayah");
 

@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { getUsableSession } from "@/lib/qf-user/session";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { authRequiredBody } from "@/lib/flashcard/auth-required";
+import { clientErrorMessage } from "@/lib/public-error";
 
-export async function GET() {
+export async function GET(request: Request) {
   const cookieCarrier = new NextResponse();
   const session = await getUsableSession(cookieCarrier.cookies);
   if (!session) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json(authRequiredBody(request), { status: 401 });
   }
 
   const supabase = createAdminSupabaseClient();
@@ -27,12 +29,12 @@ export async function PUT(request: Request) {
   const cookieCarrier = new NextResponse();
   const session = await getUsableSession(cookieCarrier.cookies);
   if (!session) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json(authRequiredBody(request), { status: 401 });
   }
 
   const prefs = await request.json().catch(() => null);
   if (!prefs) {
-    return NextResponse.json({ error: "Invalid body." }, { status: 400 });
+    return NextResponse.json({ error: "Invalid body." }, { status: 400, headers: cookieCarrier.headers });
   }
 
   const supabase = createAdminSupabaseClient();
@@ -50,12 +52,18 @@ export async function PUT(request: Request) {
       daily_review_cards_limit: prefs.daily_review_cards_limit,
       session_size: prefs.session_size,
       normalization_level: prefs.normalization_level,
+      // Older clients don't send these; leave the stored values alone then.
+      ...(typeof prefs.new_cards_ignore_review_limit === "boolean"
+        ? { new_cards_ignore_review_limit: prefs.new_cards_ignore_review_limit }
+        : {}),
+      ...(prefs.algorithm === "fsrs" || prefs.algorithm === "sm2" ? { algorithm: prefs.algorithm } : {}),
+      ...(prefs.fsrs_params && typeof prefs.fsrs_params === "object" ? { fsrs_params: prefs.fsrs_params } : {}),
     },
     { onConflict: "user_id" }
   );
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: clientErrorMessage(error, "Could not save preferences.") }, { status: 500, headers: cookieCarrier.headers });
   }
 
   return NextResponse.json({ ok: true }, { headers: cookieCarrier.headers });

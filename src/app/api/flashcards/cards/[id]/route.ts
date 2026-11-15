@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getUsableSession } from "@/lib/qf-user/session";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { authRequiredBody } from "@/lib/flashcard/auth-required";
+import { clientErrorMessage } from "@/lib/public-error";
+import { hasValidCardStates } from "@/lib/api-validation";
 
 export async function PATCH(
   request: Request,
@@ -9,13 +12,16 @@ export async function PATCH(
   const cookieCarrier = new NextResponse();
   const session = await getUsableSession(cookieCarrier.cookies);
   if (!session) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json(authRequiredBody(request), { status: 401 });
   }
 
   const { id } = await params;
   const updates = await request.json().catch(() => null);
   if (!updates) {
-    return NextResponse.json({ error: "Invalid body." }, { status: 400 });
+    return NextResponse.json({ error: "Invalid body." }, { status: 400, headers: cookieCarrier.headers });
+  }
+  if (!hasValidCardStates(updates)) {
+    return NextResponse.json({ error: "Invalid flashcard." }, { status: 400, headers: cookieCarrier.headers });
   }
 
   const supabase = createAdminSupabaseClient();
@@ -27,6 +33,8 @@ export async function PATCH(
   if (updates.source_juz_number !== undefined) dbUpdates.source_juz_number = updates.source_juz_number;
   if (updates.source_page_number !== undefined) dbUpdates.source_page_number = updates.source_page_number;
   if (updates.fsrs_state !== undefined) dbUpdates.fsrs_state = updates.fsrs_state;
+  // Classic (SM-2) state; null clears it (undo of a card's first review).
+  if (updates.sm2_state !== undefined) dbUpdates.sm2_state = updates.sm2_state;
 
   const { error } = await supabase
     .from("user_flashcards")
@@ -35,20 +43,20 @@ export async function PATCH(
     .eq("user_id", session.player_id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: clientErrorMessage(error, "Could not update the flashcard.") }, { status: 500, headers: cookieCarrier.headers });
   }
 
   return NextResponse.json({ ok: true }, { headers: cookieCarrier.headers });
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const cookieCarrier = new NextResponse();
   const session = await getUsableSession(cookieCarrier.cookies);
   if (!session) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json(authRequiredBody(request), { status: 401 });
   }
 
   const { id } = await params;
@@ -60,7 +68,7 @@ export async function DELETE(
     .eq("user_id", session.player_id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: clientErrorMessage(error, "Could not delete the flashcard.") }, { status: 500, headers: cookieCarrier.headers });
   }
 
   return NextResponse.json({ ok: true }, { headers: cookieCarrier.headers });

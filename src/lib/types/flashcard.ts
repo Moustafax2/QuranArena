@@ -75,14 +75,18 @@ export interface FSRSCard {
 }
 
 // ============================================================
-// SM-2 Card State (SuperMemo 2 legacy algorithm)
+// SM-2 Card State ("Classic (SM-2 based)" scheduler)
 // ============================================================
 
 export interface SM2Card {
-  interval: number;       // days until next review
+  // Missing on states saved by older versions; those are treated as "review".
+  phase?: "learning" | "review" | "relearning";
+  step?: number;          // index into the learning/relearning steps
+  interval: number;       // review interval in days (for relearning: the interval it returns with)
   repetitions: number;    // number of successful reviews in a row
-  easiness: number;       // easiness factor (EF), default 2.5
-  due: Date;              // next review date
+  easiness: number;       // ease factor, default 2.5 (250%)
+  lapses?: number;        // times a review card was forgotten
+  due: Date;              // next review time
   last_review?: Date;
 }
 
@@ -94,7 +98,7 @@ export interface UserFlashcard {
   id: string;
   word_id: string;
   fsrs_state: FSRSCard;
-  sm2_state?: SM2Card;    // populated from localStorage when SM-2 mode is active
+  sm2_state?: SM2Card | null; // Classic (SM-2) state; null/undefined = never studied in that mode
   created_at: Date;
   status: WordStatus;
   source_surah_id?: number | null;
@@ -136,6 +140,8 @@ export interface UserPreferences {
   session_size: number;
   normalization_level: "strict" | "moderate" | "broad";
   algorithm: "fsrs" | "sm2";
+  /** Off by default: new cards also use up the daily review limit. */
+  new_cards_ignore_review_limit: boolean;
 }
 
 export interface FlashcardSession {
@@ -169,7 +175,7 @@ export interface FSRSParameters {
 
 export const DEFAULT_FSRS_PARAMETERS: FSRSParameters = {
   request_retention: 0.9,
-  maximum_interval: 365,
+  maximum_interval: 36500,
   enable_fuzz: true,
   w: [
     0.212, 1.2931, 2.3065, 8.2956, 6.4133, 0.8334, 3.0194, 0.001, 1.8722,
@@ -187,8 +193,9 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   auto_audio: false,
   show_transliteration: false,
   daily_new_cards_limit: 20,
-  daily_review_cards_limit: 100,
+  daily_review_cards_limit: 200,
   session_size: 20,
   normalization_level: "moderate",
   algorithm: "fsrs",
+  new_cards_ignore_review_limit: false,
 };

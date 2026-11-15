@@ -2,25 +2,34 @@ import type { LexicalEntry } from "@/lib/types/flashcard";
 import { CardType } from "@/lib/types/flashcard";
 
 let cachedDB: LexicalEntry[] = [];
+// Shared by concurrent callers so the 5.5 MB file is fetched once.
+let loading: Promise<LexicalEntry[]> | null = null;
 
+/**
+ * Loads the lexical database. A failed load is thrown to the caller (and
+ * retried on the next call) instead of silently serving sample data.
+ */
 export async function loadLexicalDB(): Promise<LexicalEntry[]> {
   if (cachedDB.length > 0) return cachedDB;
-  
-  try {
-    const response = await fetch("/data/lexical-db.json");
-    if (!response.ok) {
-      console.warn("Lexical DB not found, using mock data");
-      cachedDB = getMockData();
+  if (!loading) {
+    loading = (async () => {
+      const response = await fetch("/data/lexical-db.json");
+      if (!response.ok) throw new Error(`Lexical DB could not be loaded (${response.status}).`);
+      const data = await response.json();
+      cachedDB = data.entries || [];
       return cachedDB;
-    }
-    const data = await response.json();
-    cachedDB = data.entries || [];
-    return cachedDB;
-  } catch (error) {
-    console.error("Failed to load lexical DB:", error);
-    cachedDB = getMockData();
-    return cachedDB;
+    })().finally(() => {
+      loading = null;
+    });
   }
+  return loading;
+}
+
+const stripRoot = (root: string) => root.replace(/[\s_]/g, "");
+
+/** The single entry matching, or null when there is none or more than one. */
+function unique(candidates: LexicalEntry[]): LexicalEntry | null {
+  return candidates.length === 1 ? candidates[0] : null;
 }
 
 export async function getWordById(id: string): Promise<LexicalEntry | null> {
@@ -31,47 +40,66 @@ export async function getWordById(id: string): Promise<LexicalEntry | null> {
   const exact = cachedDB.find((entry) => entry.id === id);
   if (exact) return exact;
 
-  // Fuzzy fallback for IDs that changed after a DB rebuild.
+  // Fallback for IDs that changed after a DB rebuild.
   // ID formats:
   //   verb:     v_{root_underscores}_{lemma_prefix3}
   //   noun:     n_{lemma_prefix5}_{root_prefix3}
   //   particle: p_{text_prefix5}_001
-  // Roots are stable (come directly from corpus), so we match on root + type.
+  // A root alone is not enough (many verbs/nouns share one), so the lemma
+  // prefix must match too, and the match must be unambiguous; otherwise the
+  // card would silently show a different word.
+  // Each part is compared the way canonicalization.ts builds it: the lemma
+  // prefix with the same substring (startsWith would let a short lemma match
+  // a longer, different word), the root without its separators. With the
+  // same root format an unchanged id is an exact match, so in practice this
+  // only finds words whose root was written with different separators
+  // ("ك ت ب" vs "كتب"); no shipped build has used spaced roots so far.
   const parts = id.split("_");
   if (parts.length >= 3) {
     const typePrefix = parts[0];
     if (typePrefix === "v") {
-      // root is everything between v_ and the last _
-      const rootJoined = parts.slice(1, -1).join("_");
-      const rootNoSep = rootJoined.replace(/_/g, "");
-      const match = cachedDB.find(
-        (e) =>
-          e.type === CardType.VERB &&
-          e.root &&
-          e.root.replace(/[\s_]/g, "") === rootNoSep
+      const root = stripRoot(parts.slice(1, -1).join("_"));
+      const lemmaPrefix = parts[parts.length - 1];
+      const match = unique(
+        cachedDB.filter(
+          (e) => e.type === CardType.VERB && e.root && stripRoot(e.root) === root && e.lemma?.substring(0, 3) === lemmaPrefix
+        )
       );
       if (match) return match;
     } else if (typePrefix === "n") {
-      // last part is the first 3 chars of the root
-      const rootPrefix = parts[parts.length - 1];
-      const match = cachedDB.find(
-        (e) =>
-          e.type === CardType.NOUN &&
-          e.root &&
-          e.root.replace(/\s/g, "").startsWith(rootPrefix)
-      );
+      const lemmaPrefix = parts[1];
+      // root.substring(0, 3) of the root as it was then; of a spaced root that
+      // is fewer letters ("ك ت"), so it is compared as a prefix.
+      const rootPrefix = stripRoot(parts[parts.length - 1]);
+      const match = rootPrefix
+        ? unique(
+            cachedDB.filter(
+              (e) =>
+                e.type === CardType.NOUN &&
+                e.root &&
+                stripRoot(e.root).startsWith(rootPrefix) &&
+                e.lemma?.substring(0, 5) === lemmaPrefix
+            )
+          )
+        : null;
       if (match) return match;
     }
   }
 
-  // Last resort: check mock data (covers cards saved when sample DB was active)
+  // Cards saved while the sample DB was active: use the real entry only when
+  // exactly one has the same type, root and lemma; otherwise show the sample.
   const mockEntry = getMockData().find((entry) => entry.id === id);
   if (mockEntry) {
-    // Try to find the equivalent real entry by root + type
     if (mockEntry.root) {
-      const rootNoSep = mockEntry.root.replace(/[\s_]/g, "");
-      const realEntry = cachedDB.find(
-        (e) => e.type === mockEntry.type && e.root && e.root.replace(/[\s_]/g, "") === rootNoSep
+      const root = stripRoot(mockEntry.root);
+      const realEntry = unique(
+        cachedDB.filter(
+          (e) =>
+            e.type === mockEntry.type &&
+            e.root &&
+            stripRoot(e.root) === root &&
+            (e.lemma ?? e.canonical_form) === (mockEntry.lemma ?? mockEntry.canonical_form)
+        )
       );
       if (realEntry) return realEntry;
     }

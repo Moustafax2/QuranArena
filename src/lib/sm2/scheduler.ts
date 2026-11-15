@@ -1,147 +1,185 @@
 /**
- * SM-2 (SuperMemo 2) Algorithm Implementation
+ * "Classic (SM-2 based)" scheduler.
  *
- * This is the original spaced repetition algorithm by Piotr Wozniak (1987),
- * as used by Anki in legacy mode. It is simpler than FSRS but less accurate
- * at modeling human memory.
+ * Algorithm SM-2, (C) Copyright SuperMemo World, 1991.
+ * https://www.supermemo.com
+ * https://www.supermemo.eu
  *
- * Reference: https://www.supermemo.com/en/blog/application-of-a-computer-to-improve-the-results-obtained-in-working-with-the-supermemo-method
+ * That copyright note and site reference are the wording SuperMemo World
+ * requires whenever SM-2 is used:
+ * https://supermemopedia.com/wiki/Licensing_SuperMemo_Algorithm
+ * (see also https://www.supermemo.com/en/blog/licensing-and-copyrighting-of-supermemo-algorithms).
+ * The original algorithm is described at
+ * https://www.supermemo.com/en/blog/application-of-a-computer-to-improve-the-results-obtained-in-working-with-the-supermemo-method
  *
- * Key differences vs FSRS:
- *  - SM-2 uses a fixed easiness factor per card; FSRS models stability and difficulty separately.
- *  - SM-2 has no concept of stability growth curves; FSRS uses a power-law forgetting model.
- *  - SM-2 cannot distinguish "Hard" from "Again" in terms of interval resets as precisely as FSRS.
- *  - FSRS is significantly more accurate at predicting the optimal review time.
+ * This is SM-2 as modified by Anki's scheduler: minute-based learning steps
+ * before a card graduates, four answer buttons, ease changes of -20/-15/0/+15
+ * points, a 1.2x Hard interval, an Easy bonus and credit for answering late.
+ * It is a clean-room implementation written from the behaviour documented in
+ * the Anki manual (facts and numbers only; no Anki code was consulted):
+ *  - https://docs.ankiweb.net/deck-options.html  (learning steps, Hard on a
+ *    learning step, minimum interval, new interval, starting ease, easy bonus,
+ *    interval modifier, hard interval, maximum interval)
+ *  - https://docs.ankiweb.net/faqs/what-spaced-repetition-algorithm  (ease
+ *    changes, the Hard/Good/Easy review formulas, minimum ease of 130%, each
+ *    button at least one day longer than the previous, learning behaviour)
+ * Defaults below are the manual's/Anki's default deck options.
  */
 
-import type { SM2Card, UserFlashcard, Rating } from "@/lib/types/flashcard";
+import type { SM2Card, Rating } from "@/lib/types/flashcard";
+import { getDayStart } from "@/lib/flashcard/queue";
 
-const DEFAULT_EASINESS = 2.5;
-const MIN_EASINESS = 1.3;
+const MINUTE_MS = 60 * 1000;
+const DAY_MS = 24 * 60 * MINUTE_MS;
 
-/**
- * Convert our 1-4 rating to SM-2's 0-5 quality scale.
- *
- * SM-2 original scale:
- *   5 - perfect response
- *   4 - correct response after a hesitation
- *   3 - correct response with serious difficulty
- *   2 - incorrect; correct answer seemed easy to recall
- *   1 - incorrect; correct answer was hard
- *   0 - complete blackout
- *
- * q < 3 → fail (reset repetitions)
- * q >= 3 → pass
- */
-function ratingToQ(rating: Rating): number {
-  switch (rating) {
-    case 1: return 1;  // Again → fail (reset)
-    case 2: return 3;  // Hard  → barely passing
-    case 3: return 4;  // Good  → correct with minor hesitation
-    case 4: return 5;  // Easy  → perfect response
-    default: return 4;
-  }
+/** Learning steps for new cards, in minutes (default "1m 10m"). */
+export const LEARNING_STEPS_MIN = [1, 10];
+/** Relearning steps after a lapse, in minutes (default "10m"). */
+export const RELEARNING_STEPS_MIN = [10];
+/** Interval after the last learning step is answered Good (days). */
+export const GRADUATING_INTERVAL = 1;
+/** Interval when a learning card is answered Easy (days). */
+export const EASY_INTERVAL = 4;
+/** Starting ease, 250%. */
+export const STARTING_EASE = 2.5;
+/** Ease never goes below 130%. */
+export const MIN_EASE = 1.3;
+export const EASY_BONUS = 1.3;
+export const HARD_INTERVAL = 1.2;
+export const INTERVAL_MODIFIER = 1.0;
+/** Multiplier applied to the interval of a forgotten review card ("new interval"). */
+export const LAPSE_NEW_INTERVAL = 0;
+/** Shortest review interval, in days. */
+export const MINIMUM_INTERVAL = 1;
+export const DEFAULT_MAXIMUM_INTERVAL = 36500;
+
+export interface SM2Options {
+  maximumInterval?: number;
 }
 
-export function createNewSM2Card(): SM2Card {
+export function createNewSM2Card(now: Date = new Date()): SM2Card {
   return {
+    phase: "learning",
+    step: 0,
     interval: 0,
     repetitions: 0,
-    easiness: DEFAULT_EASINESS,
-    due: new Date(),
+    easiness: STARTING_EASE,
+    lapses: 0,
+    due: now,
     last_review: undefined,
   };
 }
 
-/**
- * Schedule the next review using SM-2.
- *
- * Algorithm:
- *  if q < 3:
- *    repetitions = 0; interval = 1
- *  else:
- *    if n==0: interval = 1
- *    elif n==1: interval = 6
- *    else: interval = round(prev_interval * EF)
- *    repetitions += 1
- *  EF = max(1.3, EF + 0.1 - (5-q)(0.08 + (5-q)*0.02))
- *  due = today + interval days
- */
-export function scheduleSM2Review(
-  card: SM2Card,
-  rating: Rating,
-  reviewDate: Date = new Date()
-): SM2Card {
-  const q = ratingToQ(rating);
-  let { interval, repetitions, easiness } = card;
-
-  if (q < 3) {
-    // Failed: reset streak, review again tomorrow
-    repetitions = 0;
-    interval = 1;
-  } else {
-    // Passed
-    if (repetitions === 0) {
-      interval = 1;
-    } else if (repetitions === 1) {
-      interval = 6;
-    } else {
-      interval = Math.round(interval * easiness);
-    }
-    repetitions += 1;
-  }
-
-  // Update easiness factor (same regardless of pass/fail)
-  const efDelta = 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02);
-  easiness = Math.max(MIN_EASINESS, easiness + efDelta);
-
-  const due = new Date(reviewDate);
-  due.setDate(due.getDate() + interval);
-
+/** States saved before learning steps existed have no phase: they are reviews. */
+function normalize(card: SM2Card): Required<Omit<SM2Card, "last_review">> & Pick<SM2Card, "last_review"> {
   return {
-    interval,
-    repetitions,
-    easiness,
-    due,
-    last_review: reviewDate,
+    phase: card.phase ?? "review",
+    step: card.step ?? 0,
+    interval: card.phase ? card.interval : Math.max(MINIMUM_INTERVAL, card.interval),
+    repetitions: card.repetitions,
+    easiness: card.easiness,
+    lapses: card.lapses ?? 0,
+    due: new Date(card.due),
+    last_review: card.last_review ? new Date(card.last_review) : undefined,
   };
 }
 
 /**
- * For SM-2 mode, determine which cards are due based on sm2_state.
- * Cards without a sm2_state are treated as due (new).
+ * Delay for Hard on a learning step: halfway between the first two steps on
+ * the first step (1.5x the step, at most a day longer, when there is only
+ * one), otherwise a repeat of the current step.
  */
-export function getSM2DueCards(cards: UserFlashcard[]): UserFlashcard[] {
-  const now = new Date();
-  return cards.filter((card) => {
-    if (!card.sm2_state) return true; // new card, treat as due
-    return new Date(card.sm2_state.due) <= now;
+function hardStepMinutes(steps: number[], step: number): number {
+  if (step > 0) return steps[step];
+  if (steps.length > 1) return (steps[0] + steps[1]) / 2;
+  return Math.min(steps[0] * 1.5, steps[0] + 24 * 60);
+}
+
+function addMinutes(date: Date, minutes: number): Date {
+  return new Date(date.getTime() + minutes * MINUTE_MS);
+}
+
+function addDays(date: Date, days: number): Date {
+  const due = new Date(date);
+  due.setDate(due.getDate() + days);
+  return due;
+}
+
+/** Whole study days between the due day and the answer day (0 if not late). */
+function daysLate(due: Date, now: Date): number {
+  const diff = Math.round((getDayStart(now).getTime() - getDayStart(due).getTime()) / DAY_MS);
+  return Math.max(0, diff);
+}
+
+/** Schedule the next review of a Classic-mode card. */
+export function scheduleSM2Review(
+  input: SM2Card,
+  rating: Rating,
+  reviewDate: Date = new Date(),
+  options: SM2Options = {}
+): SM2Card {
+  const maxInterval = Math.max(MINIMUM_INTERVAL, options.maximumInterval ?? DEFAULT_MAXIMUM_INTERVAL);
+  const card = normalize(input);
+  const base = { ...card, last_review: reviewDate };
+
+  const graduate = (interval: number): SM2Card => {
+    const days = Math.min(maxInterval, Math.max(MINIMUM_INTERVAL, Math.round(interval)));
+    return { ...base, phase: "review", step: 0, interval: days, repetitions: card.repetitions + 1, due: addDays(reviewDate, days) };
+  };
+  const atStep = (phase: "learning" | "relearning", step: number, minutes: number): SM2Card => ({
+    ...base, phase, step, due: addMinutes(reviewDate, minutes),
   });
-}
 
-export function getSM2NewCards(cards: UserFlashcard[], limit: number): UserFlashcard[] {
-  return cards
-    .filter((card) => !card.sm2_state || card.sm2_state.repetitions === 0)
-    .slice(0, limit);
-}
+  if (card.phase === "learning" || card.phase === "relearning") {
+    const steps = card.phase === "learning" ? LEARNING_STEPS_MIN : RELEARNING_STEPS_MIN;
+    const step = Math.min(card.step, steps.length - 1);
+    // A relearning card returns with the interval worked out at the lapse.
+    const goodInterval = card.phase === "learning" ? GRADUATING_INTERVAL : card.interval;
+    // Not specified by the manual for relearning; one day past Good keeps Easy > Good.
+    const easyInterval = card.phase === "learning" ? EASY_INTERVAL : card.interval + 1;
+    switch (rating) {
+      case 1:
+        return atStep(card.phase, 0, steps[0]);
+      case 2:
+        return atStep(card.phase, step, hardStepMinutes(steps, step));
+      case 3:
+        return step + 1 < steps.length ? atStep(card.phase, step + 1, steps[step + 1]) : graduate(goodInterval);
+      default:
+        return graduate(easyInterval);
+    }
+  }
 
-export function getSM2CardsForSession(
-  cards: UserFlashcard[],
-  newLimit: number,
-  reviewLimit: number
-): UserFlashcard[] {
-  const now = new Date();
+  // Review card.
+  const current = Math.max(MINIMUM_INTERVAL, card.interval);
+  const ease = card.easiness;
+  if (rating === 1) {
+    const lapseInterval = Math.max(MINIMUM_INTERVAL, Math.round(current * LAPSE_NEW_INTERVAL));
+    return {
+      ...base,
+      phase: "relearning",
+      step: 0,
+      interval: lapseInterval,
+      repetitions: 0,
+      easiness: Math.max(MIN_EASE, ease - 0.2),
+      lapses: card.lapses + 1,
+      due: addMinutes(reviewDate, RELEARNING_STEPS_MIN[0]),
+    };
+  }
 
-  const newCards = cards
-    .filter((c) => !c.sm2_state || c.sm2_state.repetitions === 0)
-    .slice(0, newLimit);
+  const late = daysLate(card.due, reviewDate);
+  const hard = Math.max(current + 1, Math.round(current * HARD_INTERVAL * INTERVAL_MODIFIER));
+  const good = Math.max(hard + 1, Math.round((current + late / 2) * ease * INTERVAL_MODIFIER));
+  const easy = Math.max(good + 1, Math.round((current + late) * ease * EASY_BONUS * INTERVAL_MODIFIER));
+  const interval = Math.min(maxInterval, rating === 2 ? hard : rating === 3 ? good : easy);
+  const easiness = rating === 2 ? Math.max(MIN_EASE, ease - 0.15) : rating === 4 ? ease + 0.15 : ease;
 
-  const reviewCards = cards
-    .filter((c) => {
-      if (!c.sm2_state || c.sm2_state.repetitions === 0) return false;
-      return new Date(c.sm2_state.due) <= now;
-    })
-    .slice(0, reviewLimit);
-
-  return [...reviewCards, ...newCards];
+  return {
+    ...base,
+    phase: "review",
+    step: 0,
+    interval,
+    repetitions: card.repetitions + 1,
+    easiness,
+    due: addDays(reviewDate, interval),
+  };
 }

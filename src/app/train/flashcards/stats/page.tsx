@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getFlashcards, getReviewLog, getPreferences } from "@/lib/storage/flashcard-storage-supabase";
-import { FSRSState } from "@/lib/types/flashcard";
+import { getFlashcards, getReviewLog, getPreferences, SessionExpiredError } from "@/lib/storage/flashcard-storage-supabase";
+import { isStudyCard } from "@/lib/flashcard/queue";
+import { computeDeckStats } from "@/lib/flashcard/stats";
+import { settle } from "@/lib/settle";
 import type { UserFlashcard, ReviewLogEntry, UserPreferences } from "@/lib/types/flashcard";
 
 export default function StatsPage() {
@@ -10,18 +12,24 @@ export default function StatsPage() {
   const [reviews, setReviews] = useState<ReviewLogEntry[]>([]);
   const [prefs, setPrefs] = useState<UserPreferences | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     async function loadData() {
-      const [flashcards, reviewLog, preferences] = await Promise.all([
-        getFlashcards(),
-        getReviewLog(),
-        getPreferences(),
-      ]);
-      setCards(flashcards);
+      // settle() never rejects, so loading is cleared on every exit path
+      // without a try/finally, which the React Compiler lint would skip this
+      // component for (A4 review #10).
+      const result = await settle(() => Promise.all([getFlashcards(), getReviewLog(), getPreferences()]));
+      setLoading(false);
+      if (!result.ok) {
+        console.error("Failed to load statistics:", result.error);
+        setLoadError(result.error instanceof SessionExpiredError ? result.error.message : "Statistics could not be loaded. Please try again.");
+        return;
+      }
+      const [flashcards, reviewLog, preferences] = result.value;
+      setCards(flashcards.filter(isStudyCard));
       setReviews(reviewLog);
       setPrefs(preferences);
-      setLoading(false);
     }
     loadData();
   }, []);
@@ -38,15 +46,6 @@ export default function StatsPage() {
   }
 
   const totalWords = cards.length;
-  const learningCards = cards.filter(
-    (c) =>
-      c.fsrs_state.state === FSRSState.Learning ||
-      c.fsrs_state.state === FSRSState.Relearning
-  ).length;
-  const matureCards = cards.filter(
-    (c) => c.fsrs_state.state === FSRSState.Review && c.fsrs_state.stability >= 21
-  ).length;
-
   const totalReviews = reviews.length;
   const thisWeekReviews = reviews.filter((r) => {
     const weekAgo = new Date();
@@ -61,45 +60,20 @@ export default function StatsPage() {
   const avgReviewTime =
     totalReviews > 0 ? totalStudyTime / totalReviews : 0;
 
-  const goodReviews = reviews.filter((r) => r.rating >= 3).length;
-  const retentionRate =
-    totalReviews > 0 ? (goodReviews / totalReviews) * 100 : 0;
-
-  // ── Projections ──────────────────────────────────────────────
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  // 7-day forecast: how many cards are due each day
-  const forecastDays = 7;
-  const forecast = Array.from({ length: forecastDays }, (_, i) => {
-    const dayStart = new Date(today);
-    dayStart.setDate(today.getDate() + i);
-    const dayEnd = new Date(dayStart);
-    dayEnd.setDate(dayStart.getDate() + 1);
-    const count = cards.filter((c) => {
-      const due = new Date(c.fsrs_state.due);
-      return due >= dayStart && due < dayEnd;
-    }).length;
-    return { label: i === 0 ? "Today" : i === 1 ? "Tomorrow" : `+${i}d`, count };
-  });
-  const forecastMax = Math.max(...forecast.map((d) => d.count), 1);
-
-  // Reviews due in the next 30 days
-  const in30Days = new Date(today);
-  in30Days.setDate(today.getDate() + 30);
-  const dueIn30 = cards.filter((c) => new Date(c.fsrs_state.due) < in30Days).length;
-
-  // Days to introduce all remaining new cards
+  // Counts, forecast and projections from the active algorithm's state.
   const dailyNewLimit = prefs?.daily_new_cards_limit ?? 20;
-  const newCards = cards.filter((c) => c.fsrs_state.state === FSRSState.New).length;
-  const daysToLearnAll = newCards > 0 ? Math.ceil(newCards / dailyNewLimit) : 0;
-
-  // Average interval of cards currently in Review state
-  const reviewCards = cards.filter((c) => c.fsrs_state.state === FSRSState.Review);
-  const avgInterval =
-    reviewCards.length > 0
-      ? Math.round(reviewCards.reduce((s, c) => s + c.fsrs_state.scheduled_days, 0) / reviewCards.length)
-      : 0;
+  const {
+    newCards,
+    learningCards,
+    matureCards,
+    retentionRate,
+    forecast,
+    dueIn30,
+    daysToLearnAll,
+    avgInterval,
+    reviewCardCount,
+  } = computeDeckStats(cards, reviews, { dailyNewLimit, algorithm: prefs?.algorithm ?? "fsrs" });
+  const forecastMax = Math.max(...forecast.map((d) => d.count), 1);
 
   const formatTime = (ms: number) => {
     const seconds = Math.floor(ms / 1000);
@@ -118,6 +92,12 @@ export default function StatsPage() {
           <h1 className="mb-2 text-3xl font-bold text-white">Statistics</h1>
           <p className="text-gray-400">Track your learning progress</p>
         </div>
+
+        {loadError && (
+          <p role="alert" className="mb-8 rounded-xl border border-red-900/60 bg-red-950/30 p-4 text-sm text-red-300">
+            {loadError}
+          </p>
+        )}
 
         <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-2xl border border-gray-800 bg-gradient-to-br from-emerald-900/20 to-emerald-950/20 p-6">
@@ -361,10 +341,12 @@ export default function StatsPage() {
             <div className="rounded-xl border border-gray-800 bg-gray-950 p-4">
               <div className="mb-1 text-xs text-gray-500">Days to learn all new cards</div>
               <div className="text-2xl font-bold text-white">
-                {daysToLearnAll > 0 ? daysToLearnAll : "—"}
+                {daysToLearnAll === null ? "—" : daysToLearnAll > 0 ? daysToLearnAll : "—"}
               </div>
               <div className="mt-1 text-xs text-gray-600">
-                {daysToLearnAll > 0 ? `at ${dailyNewLimit}/day` : "no new cards"}
+                {daysToLearnAll === null
+                  ? "new words are paused (0/day)"
+                  : daysToLearnAll > 0 ? `at ${dailyNewLimit}/day` : "no new cards"}
               </div>
             </div>
             <div className="rounded-xl border border-gray-800 bg-gray-950 p-4">
@@ -373,7 +355,7 @@ export default function StatsPage() {
                 {avgInterval > 0 ? `${avgInterval}d` : "—"}
               </div>
               <div className="mt-1 text-xs text-gray-600">
-                {reviewCards.length > 0 ? `across ${reviewCards.length} review cards` : "no review cards yet"}
+                {reviewCardCount > 0 ? `across ${reviewCardCount} review cards` : "no review cards yet"}
               </div>
             </div>
           </div>
@@ -405,11 +387,11 @@ export default function StatsPage() {
                     }`}
                   >
                     {review.rating === 1
-                      ? "Again"
+                      ? "Forgot"
                       : review.rating === 2
                       ? "Hard"
                       : review.rating === 3
-                      ? "Good"
+                      ? "Got it"
                       : "Easy"}
                   </div>
                 </div>

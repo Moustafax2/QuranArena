@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getDueCardsCount, getNewCardsCount } from "@/lib/flashcard/session-manager";
+import { getFlashcardOverview } from "@/lib/flashcard/session-manager";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { getMemorizationAttempts } from "@/lib/memorization/storage";
 import { buildProgressDashboard } from "@/lib/progress/dashboard";
@@ -24,11 +24,7 @@ import {
   getCoverageRange,
   MODE_LABELS,
 } from "@/lib/progress/utils";
-import {
-  getFlashcards,
-  getReviewLog,
-  migrateFromLocalStorage,
-} from "@/lib/storage/flashcard-storage-supabase";
+import { migrateFromLocalStorage } from "@/lib/storage/flashcard-storage-supabase";
 
 const MODE_LINKS: Record<DashboardMode, string> = {
   "multiple-choice": "/play",
@@ -383,12 +379,10 @@ export function ProgressPageClient() {
         await migrateFromLocalStorage();
 
         const guestPlayerId = isGuest && player ? player.id : null;
-        const [flashcards, reviews, dueCount, newCount, memorizationAttempts, play] =
+        // One load each of the cards, preferences and review log (A4 review #7).
+        const [flashcardData, memorizationAttempts, play] =
           await Promise.all([
-            getFlashcards(),
-            getReviewLog(),
-            getDueCardsCount(),
-            getNewCardsCount(),
+            getFlashcardOverview(),
             getMemorizationAttempts(),
             fetchPlayProgress(player?.id ?? null, guestPlayerId),
           ]);
@@ -400,11 +394,12 @@ export function ProgressPageClient() {
             isAuthenticated,
             hasPlayer: Boolean(player),
             play,
-            flashcards,
-            reviews,
-            dueCount,
-            newCount,
+            flashcards: flashcardData.cards,
+            reviews: flashcardData.reviews,
+            dueCount: flashcardData.due,
+            newCount: flashcardData.newCards,
             memorizationAttempts,
+            algorithm: flashcardData.algorithm,
           })
         );
       } catch (loadError) {

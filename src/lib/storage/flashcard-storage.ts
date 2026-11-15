@@ -70,6 +70,18 @@ export async function addFlashcard(card: UserFlashcard): Promise<void> {
   await saveFlashcards(cards);
 }
 
+/** Adds several cards in one write; words already in the deck are kept as they are. */
+export async function addFlashcards(newCards: UserFlashcard[]): Promise<void> {
+  const cards = await getFlashcards();
+  const words = new Set(cards.map((c) => c.word_id));
+  for (const card of newCards) {
+    if (words.has(card.word_id)) continue;
+    words.add(card.word_id);
+    cards.push(card);
+  }
+  await saveFlashcards(cards);
+}
+
 export async function updateFlashcard(cardId: string, updates: Partial<UserFlashcard>): Promise<void> {
   const cards = await getFlashcards();
   const index = cards.findIndex((c) => c.id === cardId);

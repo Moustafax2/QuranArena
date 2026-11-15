@@ -356,6 +356,7 @@ export interface Database {
           word_id: string;
           status: "IN_BANK" | "KNOWN_NOT_IN_BANK" | "UNKNOWN_SELECTED";
           fsrs_state: FSRSCard;
+          sm2_state: Record<string, unknown> | null;
           created_at: string;
           source_surah_id: number | null;
           source_ayah_number: number | null;
@@ -368,6 +369,7 @@ export interface Database {
           word_id: string;
           status?: "IN_BANK" | "KNOWN_NOT_IN_BANK" | "UNKNOWN_SELECTED";
           fsrs_state: FSRSCard;
+          sm2_state?: Record<string, unknown> | null;
           created_at?: string;
           source_surah_id?: number | null;
           source_ayah_number?: number | null;
@@ -380,6 +382,7 @@ export interface Database {
           word_id?: string;
           status?: "IN_BANK" | "KNOWN_NOT_IN_BANK" | "UNKNOWN_SELECTED";
           fsrs_state?: FSRSCard;
+          sm2_state?: Record<string, unknown> | null;
           created_at?: string;
           source_surah_id?: number | null;
           source_ayah_number?: number | null;
@@ -492,6 +495,9 @@ export interface Database {
           daily_review_cards_limit: number;
           session_size: number;
           normalization_level: "strict" | "moderate" | "broad";
+          algorithm: "fsrs" | "sm2";
+          fsrs_params: Record<string, unknown> | null;
+          new_cards_ignore_review_limit: boolean;
           updated_at: string;
         };
         Insert: {
@@ -507,6 +513,9 @@ export interface Database {
           daily_review_cards_limit?: number;
           session_size?: number;
           normalization_level?: "strict" | "moderate" | "broad";
+          algorithm?: "fsrs" | "sm2";
+          fsrs_params?: Record<string, unknown> | null;
+          new_cards_ignore_review_limit?: boolean;
           updated_at?: string;
         };
         Update: {
@@ -522,6 +531,9 @@ export interface Database {
           daily_review_cards_limit?: number;
           session_size?: number;
           normalization_level?: "strict" | "moderate" | "broad";
+          algorithm?: "fsrs" | "sm2";
+          fsrs_params?: Record<string, unknown> | null;
+          new_cards_ignore_review_limit?: boolean;
           updated_at?: string;
         };
         Relationships: [];
@@ -536,6 +548,7 @@ export interface Database {
       delete_player_data: { Args: { target_player: string }; Returns: undefined };
       invalidate_player_sessions: { Args: { target_player: string }; Returns: undefined };
       export_player_data: { Args: { target_player: string }; Returns: Record<string, unknown> };
+      mp_advance_round: { Args: { p_game_id: string }; Returns: Record<string, unknown> };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
