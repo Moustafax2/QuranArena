@@ -19,6 +19,7 @@ import { runRowCapTests } from "../src/lib/data/row-cap.test";
 import { runPrivacyGateTests } from "../src/lib/privacy/privacy-gate.test";
 import { runSessionRefreshTests } from "../src/lib/qf-user/session-refresh.test";
 import { runMemorizationOutboxTests } from "../src/lib/memorization/outbox.test";
+import { runMultiplayerTests } from "../src/lib/multiplayer/multiplayer.test";
 import { runFlagWordingTests, runReviewActionTests, runSettingsResetTests, runShortcutTests, runStatsTests } from "../src/lib/flashcard/stats.test";
 
 async function main() {
@@ -57,6 +58,7 @@ async function main() {
     await runPrivacyGateTests();
     await runSessionRefreshTests();
     await runMemorizationOutboxTests();
+    await runMultiplayerTests();
     console.log("All progress helper tests passed.");
   } catch (error) {
     console.error("Progress helper tests failed.");
