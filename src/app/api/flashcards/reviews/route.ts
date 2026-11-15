@@ -4,6 +4,7 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { authRequiredBody } from "@/lib/flashcard/auth-required";
 import { clientErrorMessage } from "@/lib/public-error";
 import { intParam } from "@/lib/api-validation";
+import { fetchInChunks } from "@/lib/supabase/paging";
 
 export async function GET(request: Request) {
   const cookieCarrier = new NextResponse();
@@ -94,18 +95,21 @@ export async function POST(request: Request) {
   // keeps the server id), and must never point at someone else's card. A
   // review whose word has no card would fail the batch on the foreign key, so
   // it is dropped.
+  // Every id goes into the request URL, so the lookup is chunked
+  // (IN_CHUNK_SIZE ids per request) to stay within URL limits.
   const wordIds = [...new Set(logs.map((log) => log.word_id))];
   const cardForWord = new Map<string, string>();
-  for (let i = 0; i < wordIds.length; i += 500) {
-    const { data, error } = await supabase
-      .from("user_flashcards")
-      .select("id, word_id")
-      .eq("user_id", session.player_id)
-      .in("word_id", wordIds.slice(i, i + 500));
-    if (error) {
-      return NextResponse.json({ error: clientErrorMessage(error, "Could not save reviews.") }, { status: 500, headers: cookieCarrier.headers });
-    }
-    for (const row of (data ?? []) as Array<{ id: string; word_id: string }>) cardForWord.set(row.word_id, row.id);
+  try {
+    const owned = await fetchInChunks<{ id: string; word_id: string }>(wordIds, (chunk) =>
+      supabase
+        .from("user_flashcards")
+        .select("id, word_id")
+        .eq("user_id", session.player_id)
+        .in("word_id", chunk)
+    );
+    for (const row of owned) cardForWord.set(row.word_id, row.id);
+  } catch (error) {
+    return NextResponse.json({ error: clientErrorMessage(error, "Could not save reviews.") }, { status: 500, headers: cookieCarrier.headers });
   }
 
   const rows = logs
