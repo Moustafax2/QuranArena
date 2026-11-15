@@ -125,7 +125,8 @@ function enrichWithFallbacks(
   root: string,
   corpusForms: Partial<VerbForms>
 ): VerbForms {
-  let { past, present, imperative, verbal_noun: verbalNoun } = corpusForms;
+  let { past, present, imperative } = corpusForms;
+  const verbalNoun = corpusForms.verbal_noun;
 
   const hasMissingForms = past === undefined || present === undefined || imperative === undefined;
 

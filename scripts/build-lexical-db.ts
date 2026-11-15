@@ -6,10 +6,10 @@ import { buckwalterToArabic, getUnmappedChars } from "./buckwalter-to-arabic";
 
 // #region agent log
 const logFile = 'debug-58567c.log';
-function logDebug(location: string, message: string, data: any, hypothesisId: string) {
+function logDebug(location: string, message: string, data: Record<string, unknown>, hypothesisId: string) {
   try {
     appendFileSync(logFile, JSON.stringify({sessionId:'58567c',location,message,data,timestamp:Date.now(),hypothesisId}) + '\n');
-  } catch(e) {}
+  } catch {}
 }
 // #endregion
 
