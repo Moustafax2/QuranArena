@@ -196,3 +196,25 @@ Accepted limits:
   - `players.session_version` as a second M10 trigger.
 - **Not tested in the browser:** the deck browser's Unlearn and Delete buttons; the suite covers them.
 - **Local database:** it is left with the test player and the migrated rows. The Supabase stack is still running.
+
+## 8. D1 browser re-check (agent V1, HEAD `2eaf8a0`)
+
+I re-ran the D1 reproduction in the browser after F1's fix (`df9debc`, `5613639`, `8cb1467`).
+- **Setup:** the same fenced setup as above, with `npm run dev -- --webpack`, the memory watchdog, and headless Chrome with a fresh profile, driven over CDP.
+- **Corrupting the cookie:** the last 8 characters of the `qf_session` cookie value were replaced with `AAAAAAAA`; the consent cookie was left intact.
+- **Storage check:** for each corrupted-cookie check, I compared a snapshot of every `qalamspace_*`, `flashcard*`, `fsrs*` and `sm2*` key in `localStorage` (length and hash of each value) before and after the page view.
+
+| # | Check | Result | Evidence |
+|---|---|---|---|
+| R1 | Pure guest (fresh profile, no cookie ever) | PASS | The hub loads with the "How it works" modal and the guest banner. No consent or age prompt, no "expired" text. Intake of surah 1 shows "20 to learn • 0 known"; after Finish the hub shows "20 cards to study, 20 new · 0 due", and the same after a reload |
+| R2 | Account setup | PASS | Second fresh profile. The `/login` consent box starts unticked; tick it, then Continue saves the consent (QF discovery blocked by the fence). Dev login, then the account hub shows "V1 Test Account" with Total 20 (database: 20 cards, 27 reviews) |
+| R3 | Hub, corrupted cookie | PASS | The hub shows "Your sign-in has expired. Sign in again to keep your progress in sync. Sign in", the header shows "Login", and there is no guest banner. `localStorage` is unchanged. Requests: `GET /api/auth/qf/session`, `/api/privacy/consent` and `/api/multiplayer/guest-token` only, with no `/api/flashcards` request at all |
+| R4 | Intake, corrupted cookie (after a fresh dev login) | PASS | The page shows only the expired message: no word list, no Finish button. One `GET /api/flashcards/cards` returned 401; there was no write. `localStorage` is unchanged |
+| R5 | Settings, corrupted cookie (after a fresh dev login) | PASS | The expired message shows at the top. Clicking Save Settings sent `PUT /api/flashcards/preferences`, which returned 401, so nothing was saved and the message stayed. `localStorage` is unchanged. Across R3–R5 the database is unchanged: 20 cards, 27 reviews, preferences `updated_at` untouched |
+| R6 | Logout, then reload | PASS (server step simulated) | Header Logout removes the three P3 keys. `GET /api/auth/qf/logout` then returns 500, because the fence blocks its QF discovery request (O4), so I deleted `qf_session` and `qf_id_token` over CDP, as the route's `clearQfCookies` would. After a reload the hub shows the guest banner and no "expired" text. Plain 401 guest fallback |
+
+Notes:
+- After R3, the area under the alert shows the empty-deck state ("You haven't added any words yet"). No device data is read. This is a small wording point, not a defect.
+- A real server logout (R6) can't complete offline: it needs QF.
+
+D1 is fixed in the browser.
