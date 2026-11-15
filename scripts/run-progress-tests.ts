@@ -18,6 +18,7 @@ import { runLexicalSeedTests } from "../src/lib/lexical/seed.test";
 import { runRowCapTests } from "../src/lib/data/row-cap.test";
 import { runPrivacyGateTests } from "../src/lib/privacy/privacy-gate.test";
 import { runSessionRefreshTests } from "../src/lib/qf-user/session-refresh.test";
+import { runMemorizationOutboxTests } from "../src/lib/memorization/outbox.test";
 import { runFlagWordingTests, runReviewActionTests, runSettingsResetTests, runShortcutTests, runStatsTests } from "../src/lib/flashcard/stats.test";
 
 async function main() {
@@ -55,6 +56,7 @@ async function main() {
     await runRowCapTests();
     await runPrivacyGateTests();
     await runSessionRefreshTests();
+    await runMemorizationOutboxTests();
     console.log("All progress helper tests passed.");
   } catch (error) {
     console.error("Progress helper tests failed.");

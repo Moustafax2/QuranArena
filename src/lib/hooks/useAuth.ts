@@ -6,6 +6,7 @@ import type { Database } from "@/lib/supabase/types";
 import { forgetAccountSchedulerCopy } from "@/lib/privacy/browser-storage";
 import { clearSessionExpired, isSessionExpired, noteSessionExpired } from "@/lib/flashcard/session-expiry";
 import { AUTH_STORAGE_REFRESH_DELAY_MS, createSingleFlight, shouldRefreshAuthOnStorage } from "@/lib/auth-refresh";
+import { setCurrentPlayerId } from "@/lib/current-player";
 
 type Player = Database["public"]["Tables"]["players"]["Row"];
 
@@ -107,6 +108,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (answered.current) return;
     } else {
       answered.current = true;
+      // The player (account or guest) that browser data written from now on
+      // belongs to (audit M7). A failed read says nothing about who it is.
+      setCurrentPlayerId(payload.player?.id ?? null);
     }
     setState({
       player: payload.player,
@@ -162,6 +166,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Storage unavailable: nothing was stored.
     }
+    // Pending memorization attempts stay tagged with this player and are never
+    // uploaded or shown under anyone else (audit M7).
+    setCurrentPlayerId(null);
     window.location.href = "/api/auth/qf/logout";
   }, []);
 

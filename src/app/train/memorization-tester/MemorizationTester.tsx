@@ -104,6 +104,43 @@ function HeatmapResetModal({
   );
 }
 
+/**
+ * Saves one rating. Returns null when it was saved (or queued to retry), or
+ * the message to show when the server refused it (A4 review #3).
+ */
+async function saveRating(
+  question: MemorizationQuestion,
+  level: RatingLevel,
+  selectionType: SelectionType
+): Promise<string | null> {
+  const input = question.mode === "ayah"
+    ? {
+        mode: "ayah" as const,
+        verse_key: (question as AyahQuestion).verseKey,
+        surah_id: (question as AyahQuestion).surahId,
+        rating_level: level,
+        page_number: (question as AyahQuestion).pageNumber,
+        juz_number: (question as AyahQuestion).juzNumber,
+        selection_type: selectionType,
+      }
+    : {
+        // A page-blank question has no single verse key, so none is stored.
+        mode: "page-blank" as const,
+        rating_level: level,
+        surah_id: (question as PageBlankQuestion).surahId,
+        juz_number: (question as PageBlankQuestion).juzNumber,
+        page_number: (question as PageBlankQuestion).pageNumber,
+        selection_type: selectionType,
+        cover_region: (question as PageBlankQuestion).coverRegion,
+      };
+  try {
+    await saveMemorizationAttempt(input);
+    return null;
+  } catch (e) {
+    return e instanceof Error ? e.message : "Your rating could not be saved.";
+  }
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
 
 export function MemorizationTester() {
@@ -120,6 +157,7 @@ export function MemorizationTester() {
   const [history, setHistory] = useState<MemorizationQuestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [surahScores, setSurahScores] = useState<Record<number, number>>({});
   const [imageLoaded, setImageLoaded] = useState(false);
   const [areSettingsMinimized, setAreSettingsMinimized] = useState(true);
@@ -173,6 +211,7 @@ export function MemorizationTester() {
     if (selectedIds.size === 0) return;
     setLoading(true);
     setError(null);
+    setSaveError(null);
     setRevealed(false);
     setImageLoaded(false);
 
@@ -238,31 +277,10 @@ export function MemorizationTester() {
 
   const handleRate = useCallback(async (level: RatingLevel) => {
     if (!currentQuestion) return;
-    if (currentQuestion.mode === "ayah") {
-      const q = currentQuestion as AyahQuestion;
-      await saveMemorizationAttempt({
-        mode: "ayah",
-        verse_key: q.verseKey,
-        surah_id: q.surahId,
-        rating_level: level,
-        page_number: q.pageNumber,
-        juz_number: q.juzNumber,
-        selection_type: selectionType,
-      });
-    } else {
-      const q = currentQuestion as PageBlankQuestion;
-      await saveMemorizationAttempt({
-        mode: "page-blank",
-        rating_level: level,
-        surah_id: q.surahId,
-        juz_number: q.juzNumber,
-        page_number: q.pageNumber,
-        selection_type: selectionType,
-        cover_region: q.coverRegion,
-      });
-      // For page-blank, we don't have a single verse key — skip storing per-verse
-      // Could be extended later to store page-level data
-    }
+    // A refused rating stays on this question, so the user sees it and can retry.
+    const failure = await saveRating(currentQuestion, level, selectionType);
+    setSaveError(failure);
+    if (failure) return;
     setSurahScores(await getSurahScores());
     await fetchQuestion();
   }, [currentQuestion, fetchQuestion, selectionType]);
@@ -604,6 +622,10 @@ export function MemorizationTester() {
         <div className={`flex items-center justify-center rounded-2xl border py-32 ${cardClass}`}>
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
         </div>
+      )}
+
+      {saveError && (
+        <p role="alert" className="mb-3 rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-300">{saveError}</p>
       )}
 
       {error && !loading && (
