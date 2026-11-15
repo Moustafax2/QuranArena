@@ -155,6 +155,24 @@ Causes:
 
 Severity: medium. A signed-in user whose session lapses quietly studies on the device copy, and their data splits between the server and the browser, which is what M10 is meant to prevent. No test was added; a real reproduction needs the browser race between the two routes. Left for the coordinator.
 
+#### D1 resolution (agent F1)
+
+Fixed in three commits, each test-first; every test below was seen failing before its fix. The tests are in `src/lib/flashcard/session-expiry.test.ts`, run by `npm test`.
+
+- **D1a (`df9debc`):** `migrateDeviceSchedulerPreferences`, `migrateLegacySM2States`, `uploadLocalData` and `importData` no longer swallow `SessionExpiredError` or turn it into a generic error. The first request of the sign-in upload, often the only one that still carries the cookie, now reaches the hub's "Sign in again" state.
+- **D1b (`5613639`):** `GET /api/auth/qf/session` adds `sessionExpired: true` when the request carried a non-empty `qf_session` cookie and the session was unusable (the null path and the catch path).
+  - Otherwise main's behaviour is unchanged: the cookies are still cleared and `isAuthenticated` is still false. A request without the cookie gets main's reply exactly.
+  - It is a response field only: no cookie, no browser storage, no personal data.
+  - `useAuth` exposes it as `sessionExpired`.
+- **D1c (`8cb1467`):** whichever of the two signals reaches the browser first (the session route or a flashcard `SESSION_EXPIRED`) is recorded for the page view, in memory only (`src/lib/flashcard/session-expiry.ts`).
+  - For the rest of that page view, every flashcard 401 is an expired session, so nothing is read from or written to the device.
+  - The hub waits for `useAuth`, then shows "Your sign-in has expired. Sign in again". Intake and settings show the same message; review, stats and browse already did.
+
+Accepted limits:
+- On the next page load, the browser is a plain guest by main's rules, because main's session route has cleared the cookie. The hub's guest banner says so.
+- For guests without the cookie, nothing changes except that the hub's first load now waits for the session request `useAuth` already makes.
+- No browser re-run of the D1 reproduction was done for this fix. It is covered by unit and route tests with mocked fetch and session modules.
+
 ### Observations (not defects, or outside the port)
 
 - **O1:** Stats show "Retention Rate 0%" and "Success rate 0.0%" when no review-card answer exists yet. `src/lib/flashcard/stats.ts:106` falls back with `?? 0`, and `stats/page.tsx:312` shows the same number. It would read better as "no data". This is cosmetic.
