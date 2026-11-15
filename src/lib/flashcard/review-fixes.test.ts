@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { fakeSupabase, loadWithMocks } from "@/lib/flashcard/api-routes.test";
 import type { RecordedOp } from "@/lib/flashcard/api-routes.test";
 
@@ -55,6 +56,7 @@ export async function runFlashcardReviewFixTests() {
 
   await runReviewUploadValidationTests();
   await runUnknownWordTests();
+  await runReviewPageLockTests();
 }
 
 async function runReviewUploadValidationTests() {
@@ -144,5 +146,16 @@ async function runUnknownWordTests() {
     assert.deepEqual([...new Set(written)], ["w-known"]);
     const sizes = inListSizes(db.ops, "lexical_entries");
     assert.ok(sizes.length > 0 && Math.max(...sizes) <= 100);
+  });
+}
+
+async function runReviewPageLockTests() {
+  await runCase("Review #5: deleting or skipping a card waits for a rating save in flight, and vice versa", () => {
+    const page = readFileSync("src/app/train/flashcards/review/page.tsx", "utf8");
+    // The same lock as rating and undo (A1-review #3): a save that finishes
+    // after a delete would otherwise put the deleted card back in the session.
+    for (const handler of ["handleReview", "handleUndo", "handleDelete", "handleSkipMissing"]) {
+      assert.match(page, new RegExp(`const ${handler} = [^\\n]*runExclusive\\(busyRef,`), `${handler} does not take the review lock`);
+    }
   });
 }

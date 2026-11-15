@@ -186,12 +186,14 @@ export default function ReviewPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const handleSkipMissing = () => {
+  // Delete and skip take the same lock as rating and undo, so a save that
+  // finishes later can't put the removed card back (code review #5).
+  const handleSkipMissing = () => runExclusive(busyRef, async () => {
     if (!session) return;
     const updatedSession = removeCurrentCard(session);
     if (isSessionComplete(updatedSession)) setShowSummary(true);
     setSession(updatedSession);
-  };
+  });
 
   const handleFlag = () => {
     if (!session) return;
@@ -209,7 +211,7 @@ export default function ReviewPage() {
     saveFlaggedWords(updated);
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => runExclusive(busyRef, async () => {
     if (!session) return;
     const card = getCurrentCard(session);
     if (!card) return;
@@ -227,7 +229,7 @@ export default function ReviewPage() {
     setMenuOpen(false);
     if (isSessionComplete(updatedSession)) setShowSummary(true);
     setSession(updatedSession);
-  };
+  });
 
   const formatTime = (ms: number) => {
     const s = Math.floor(ms / 1000);
