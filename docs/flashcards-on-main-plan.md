@@ -1,6 +1,6 @@
 # Plan: rebuild on the remote `main`, with the flashcard changes and the major fixes
 
-**Status: PLAN ONLY. Not started. Wait for the user's explicit "go".**
+**Status: IN PROGRESS. The user said "start now" on 2026-11-14.**
 Written 2026-11-14. The source branch is `fix/audit-remediation` (HEAD `4222e14`); it stays untouched.
 Remote `main` was `origin/main` = `2355a79` when this was written. Fetch it again before starting, and note it if it has moved.
 
@@ -33,6 +33,14 @@ These differ from what `fix/audit-remediation` assumed. The text is in `origin/m
    - `npx eslint .` (record the error and warning counts; expect about 29 errors);
    - `npx next build`.
 4. Commit this plan file onto the new branch, so the agents can read it there.
+
+## Phase 0 result (recorded 2026-11-14)
+- `origin/main` had not moved: still `2355a79`. `fix/flashcards-on-main` was reset to it; `fix/audit-remediation` is unchanged at `61d27c5`.
+- Baseline on bare `origin/main`:
+  - `npm test`: exit 0 (7 progress tests ok, the privacy and multiplayer-privacy suites passed);
+  - tsc: 0;
+  - `npx eslint .`: **32 errors, 16 warnings** (exit 1). This is the baseline: no new errors are allowed; the Lint item in Phase 4 brings it to 0;
+  - `npx next build`: 0.
 
 ## Phase 1: port the flashcard changes (agent F1)
 - **Port** these, adapted to `main`:
