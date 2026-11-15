@@ -58,6 +58,7 @@ export async function runFlashcardReviewFixTests() {
   await runUnknownWordTests();
   await runReviewPageLockTests();
   await runAlgorithmSwitchTests();
+  await runGuestAlgorithmTests();
 }
 
 async function runReviewUploadValidationTests() {
@@ -198,5 +199,33 @@ async function runAlgorithmSwitchTests() {
     assert.match(handler, /saveAlgorithmChoice\(/, "the settings page doesn't use saveAlgorithmChoice");
     assert.doesNotMatch(handler, /saveAlgorithmPreference\(/, "the settings page still writes the device copy before the save");
     assert.match(handler, /catch[\s\S]*setPrefs\(/, "the settings page doesn't show the old algorithm again after a failed switch");
+  });
+}
+
+async function runGuestAlgorithmTests() {
+  await runCase("Review #8: a guest's sessions use the algorithm the settings show, also after sign-out removed the device copy", async () => {
+    const { DEFAULT_PREFERENCES } = await import("@/lib/types/flashcard");
+    // A guest who chose Classic, signed in, then signed out: the local
+    // preferences still say sm2, the device copy (P3) is gone.
+    const store = new Map<string, string>([["qalamspace_preferences", JSON.stringify({ ...DEFAULT_PREFERENCES, algorithm: "sm2" })]]);
+    const g = globalThis as unknown as Record<string, unknown>;
+    const saved = { window: g.window, localStorage: g.localStorage, fetch: globalThis.fetch };
+    g.window = globalThis;
+    g.localStorage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    };
+    globalThis.fetch = (async () => Response.json({ error: "Authentication required." }, { status: 401 })) as typeof fetch;
+    try {
+      const storage = await import("@/lib/storage/flashcard-storage-supabase");
+      assert.equal((await storage.getPreferences()).algorithm, storage.getAlgorithmPreference(), "the session and the settings disagree on the algorithm");
+      store.set("qalamspace_algorithm", "sm2");
+      assert.equal((await storage.getPreferences()).algorithm, "sm2");
+    } finally {
+      g.window = saved.window;
+      g.localStorage = saved.localStorage;
+      globalThis.fetch = saved.fetch;
+    }
   });
 }

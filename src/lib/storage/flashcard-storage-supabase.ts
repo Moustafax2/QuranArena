@@ -529,7 +529,9 @@ export async function saveAlgorithmChoice(
 
 export async function getPreferences(): Promise<UserPreferences> {
   const row = await apiFetch<Record<string, unknown>>("/api/flashcards/preferences");
-  if (row === null) return localFlashcardStorage.getPreferences();
+  // The device copy is the one algorithm setting, for guests as for accounts:
+  // the settings page shows it, and sign-out removes it (code review #8).
+  if (row === null) return { ...(await localFlashcardStorage.getPreferences()), algorithm: getAlgorithmPreference() };
   if (!row) return DEFAULT_PREFERENCES;
 
   // fsrs_params is written on every save by this version. A row without it was
