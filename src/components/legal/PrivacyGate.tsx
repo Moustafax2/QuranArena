@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, type ReactNode } from "react";
-import { checkGuestStorage, touchGuestStorage } from "@/lib/privacy/browser-storage";
+import { checkGuestStorage, LAST_ACTIVITY, touchGuestStorage } from "@/lib/privacy/browser-storage";
 import { fetchConsentStatus, saveConsent } from "@/lib/privacy/consent-client";
 import { ConsentChoice, UnderageNotice } from "./ConsentChoice";
 
@@ -18,6 +18,8 @@ export function PrivacyGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
     let guest = false;
+    // Set once a check in this page view has had an answer (audit H6).
+    let answered = false;
     const activity = () => { if (guest) touchGuestStorage(); };
     const check = () => fetchConsentStatus().then(data => {
       // Guest browser data expires after inactivity, consent or not.
@@ -26,15 +28,27 @@ export function PrivacyGate({ children }: { children: ReactNode }) {
       if (!active) return;
       setSignedIn(data.signedIn);
       setStatus(data.underage ? "underage" : data.accepted ? "accepted" : "pending");
-    }).catch(e => { if (active) { setError(e.message); setStatus("pending"); } });
+      answered = true;
+    }).catch(e => {
+      // A real "no consent" or underage answer is a reply above and gates at
+      // once. A failed re-check (offline, 503) after an answer is no answer:
+      // keep what is shown, so a game or review is not unmounted, and let the
+      // next check decide (audit H6). A failed first check is unchanged.
+      if (answered) return;
+      if (active) { setError(e.message); setStatus("pending"); }
+    });
     void check();
     const recheck = () => { void check(); };
+    // Other tabs write study data to localStorage all the time. Only a full
+    // clear() (null key: privacy controls withdrawal or deletion) or the stamp
+    // written when consent is saved can mean consent changed (audit H6).
+    const onStorage = (event: StorageEvent) => { if (event.key === null || event.key === LAST_ACTIVITY) recheck(); };
     const timer = window.setInterval(recheck, 30000);
     window.addEventListener("pointerdown", activity);
     window.addEventListener("keydown", activity);
     window.addEventListener("focus", recheck);
-    window.addEventListener("storage", recheck);
-    return () => { active = false; window.clearInterval(timer); window.removeEventListener("pointerdown", activity); window.removeEventListener("keydown", activity); window.removeEventListener("focus", recheck); window.removeEventListener("storage", recheck); };
+    window.addEventListener("storage", onStorage);
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener("pointerdown", activity); window.removeEventListener("keydown", activity); window.removeEventListener("focus", recheck); window.removeEventListener("storage", onStorage); };
   }, []);
 
   async function submit(eligible: boolean) {

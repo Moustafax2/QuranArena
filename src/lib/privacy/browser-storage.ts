@@ -1,6 +1,6 @@
 // Browser-local guest learning data cannot be erased while the browser is
 // closed. Enforce its inactivity limit before mounting study/game features.
-const LAST_ACTIVITY = "quranarena_guest_last_activity";
+export const LAST_ACTIVITY = "quranarena_guest_last_activity";
 export function clearLearningStorage() {
   for (const storage of [localStorage, sessionStorage]) {
     for (const key of Object.keys(storage)) {
