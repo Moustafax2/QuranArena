@@ -589,11 +589,16 @@ export async function importData(jsonData: string): Promise<{ skippedCards: unkn
     if (data.preferences) await savePreferences(data.preferences);
 
     if (data.reviews && Array.isArray(data.reviews)) {
-      await saveReviewLogs(
-        (data.reviews as Array<Omit<ReviewLogEntry, "timestamp"> & { timestamp: string }>).map(
-          (review) => ({ ...review, timestamp: new Date(review.timestamp) })
-        )
+      const reviews = (data.reviews as Array<Omit<ReviewLogEntry, "timestamp"> & { timestamp: string }>).map(
+        (review) => ({ ...review, timestamp: new Date(review.timestamp) })
       );
+      // A review whose time can't be read can't be sent (toISOString throws)
+      // and would stop every later review; the server skips other bad ones.
+      const readable = reviews.filter((review) => !Number.isNaN(review.timestamp.getTime()));
+      if (readable.length < reviews.length) {
+        console.warn(`Skipped ${reviews.length - readable.length} review(s) whose time could not be read.`);
+      }
+      await saveReviewLogs(readable);
     }
   } catch (error) {
     console.error("Failed to import data:", error);

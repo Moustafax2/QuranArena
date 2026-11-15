@@ -52,4 +52,68 @@ export async function runFlashcardReviewFixTests() {
     const written = db.ops.filter((op) => op.table === "review_log" && op.action === "upsert").flatMap((op) => op.payload as Row[]);
     assert.equal(written.length, 500, "a review was lost in the chunked lookup");
   });
+
+  await runReviewUploadValidationTests();
+}
+
+async function runReviewUploadValidationTests() {
+  const good = {
+    id: "00000000-0000-4000-8000-000000000001", card_id: "local-w1", word_id: "w1", rating: 3,
+    timestamp: "2026-11-01T10:00:00.000Z", session_id: "00000000-0000-4000-8000-000000000999",
+    review_duration_ms: 1000, state_before: 0, state_after: 1,
+  };
+  const bad = [
+    { ...good, id: "00000000-0000-4000-8000-000000000002", rating: 7 },
+    { ...good, id: "00000000-0000-4000-8000-000000000003", state_after: 9 },
+    { ...good, id: "not-a-uuid" },
+    { ...good, id: "00000000-0000-4000-8000-000000000004", timestamp: "garbage" },
+    { ...good, id: "00000000-0000-4000-8000-000000000005", session_id: "s" },
+    { ...good, id: "00000000-0000-4000-8000-000000000006", review_duration_ms: 1.5 },
+  ];
+
+  await runCase("Review #4: one malformed review no longer fails the whole reviews upload", async () => {
+    const db = fakeSupabase((op) =>
+      op.table === "user_flashcards" && op.action === "select" ? { data: [{ id: "card-w1", word_id: "w1" }] } : {}
+    );
+    const route = loadWithMocks<{ POST: Handler }>("../../app/api/flashcards/reviews/route.ts", {
+      "@/lib/qf-user/session": { getUsableSession: async () => ({ player_id: "p1" }) },
+      "@/lib/supabase/admin": { createAdminSupabaseClient: () => db.client },
+    });
+    const response = await route.POST(jsonRequest("POST", [good, ...bad]));
+    assert.equal(response.status, 200, "a malformed review failed the batch");
+    assert.equal(((await response.json()) as { skipped?: number }).skipped, bad.length);
+    const written = db.ops.filter((op) => op.table === "review_log" && op.action === "upsert").flatMap((op) => op.payload as Row[]);
+    assert.deepEqual(written.map((r) => r.id), [good.id]);
+    // A single review (the review page's own save) that is malformed is still refused.
+    assert.equal((await route.POST(jsonRequest("POST", bad[0]))).status, 400);
+  });
+
+  await runCase("Review #4: an import with a review whose time can't be read uploads the others", async () => {
+    const store = new Map<string, string>();
+    const g = globalThis as unknown as Record<string, unknown>;
+    const saved = { window: g.window, localStorage: g.localStorage, fetch: globalThis.fetch };
+    g.window = globalThis;
+    g.localStorage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    };
+    const posted: Row[] = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url === "/api/flashcards/reviews" && init?.method === "POST") posted.push(...(JSON.parse(String(init.body)) as Row[]));
+      return Response.json({ ok: true });
+    }) as typeof fetch;
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      const storage = await import("@/lib/storage/flashcard-storage-supabase");
+      await storage.importData(JSON.stringify({ reviews: [good, { ...good, id: "00000000-0000-4000-8000-000000000007", timestamp: "garbage" }] }));
+      assert.deepEqual(posted.map((r) => r.id), [good.id]);
+    } finally {
+      console.warn = warn;
+      g.window = saved.window;
+      g.localStorage = saved.localStorage;
+      globalThis.fetch = saved.fetch;
+    }
+  });
 }

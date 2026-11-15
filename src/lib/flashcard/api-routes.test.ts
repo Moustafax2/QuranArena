@@ -74,6 +74,12 @@ export function loadRoute<T>(file: string, supabase: ReturnType<typeof fakeSupab
 
 type Handler = (request?: Request) => Promise<Response>;
 
+/** A uuid for a short test id such as "r1" (review_log ids are uuids). */
+function uid(short: string): string {
+  return `00000000-0000-4000-8000-${Buffer.from(short).toString("hex").padStart(12, "0").slice(-12)}`;
+}
+const SESSION_UUID = "00000000-0000-4000-8000-00000000abcd";
+
 function jsonRequest(method: string, body: unknown) {
   return new Request("https://app.test/api", {
     method,
@@ -181,8 +187,8 @@ export async function runFlashcardApiTests() {
     );
     const route = loadRoute<{ POST: Handler }>("../../app/api/flashcards/reviews/route.ts", supabase);
     const review = (id: string, cardId: string, wordId = "w") => ({
-      id, card_id: cardId, word_id: wordId, rating: 3, timestamp: "2026-10-27T10:00:00.000Z",
-      session_id: "s", review_duration_ms: 100, state_before: 0, state_after: 1,
+      id: uid(id), card_id: cardId, word_id: wordId, rating: 3, timestamp: "2026-10-27T10:00:00.000Z",
+      session_id: SESSION_UUID, review_duration_ms: 100, state_before: 0, state_after: 1,
     });
     const response = await route.POST(jsonRequest("POST", [review("r1", "c1"), review("r2", "someone-elses", "w-without-card")]));
     assert.equal(response.status, 200);
@@ -190,7 +196,7 @@ export async function runFlashcardApiTests() {
     assert.equal(write?.action, "upsert");
     assert.equal(write?.options?.ignoreDuplicates, true);
     assert.equal(write?.options?.onConflict, "id");
-    assert.deepEqual((write?.payload as Array<{ id: string }>).map((r) => r.id), ["r1"]);
+    assert.deepEqual((write?.payload as Array<{ id: string }>).map((r) => r.id), [uid("r1")]);
 
     // Client: the first attempt fails part-way, so the flag stays unset; the
     // retry sends every review in one request and then sets the flag.
@@ -811,8 +817,8 @@ export async function runFlashcardApiTests() {
     });
     const route = loadRoute<{ POST: Handler }>("../../app/api/flashcards/reviews/route.ts", supabase);
     const review = (id: string, cardId: string, wordId: string) => ({
-      id, card_id: cardId, word_id: wordId, rating: 3, timestamp: "2026-10-27T10:00:00.000Z",
-      session_id: "s", review_duration_ms: 100, state_before: 0, state_after: 1,
+      id: uid(id), card_id: cardId, word_id: wordId, rating: 3, timestamp: "2026-10-27T10:00:00.000Z",
+      session_id: SESSION_UUID, review_duration_ms: 100, state_before: 0, state_after: 1,
     });
     const response = await route.POST(jsonRequest("POST", [
       review("r1", "c1", "w1"),
@@ -824,7 +830,7 @@ export async function runFlashcardApiTests() {
     const write = supabase.ops.find((op) => op.table === "review_log");
     assert.deepEqual(
       (write?.payload as Array<{ id: string; card_id: string; user_id: string }>).map((r) => [r.id, r.card_id, r.user_id]),
-      [["r1", "c1", "player-1"], ["r2", "srv-2", "player-1"], ["r3", "c1", "player-1"]]
+      [[uid("r1"), "c1", "player-1"], [uid("r2"), "srv-2", "player-1"], [uid("r3"), "c1", "player-1"]]
     );
   });
 

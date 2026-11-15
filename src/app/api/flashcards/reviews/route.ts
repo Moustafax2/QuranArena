@@ -3,7 +3,7 @@ import { getUsableSession } from "@/lib/qf-user/session";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { authRequiredBody } from "@/lib/flashcard/auth-required";
 import { clientErrorMessage } from "@/lib/public-error";
-import { intParam } from "@/lib/api-validation";
+import { intParam, isStorableReviewBody } from "@/lib/api-validation";
 import { fetchInChunks } from "@/lib/supabase/paging";
 
 export async function GET(request: Request) {
@@ -83,9 +83,17 @@ export async function POST(request: Request) {
   if (!body) {
     return NextResponse.json({ error: "Invalid body." }, { status: 400, headers: cookieCarrier.headers });
   }
-  const logs = Array.isArray(body) ? body : [body];
+  if (!Array.isArray(body) && !isStorableReviewBody(body)) {
+    return NextResponse.json({ error: "Invalid review." }, { status: 400, headers: cookieCarrier.headers });
+  }
+  // In a batch (the sign-in upload, an import) a malformed review is skipped
+  // and counted: it would fail the whole insert, on every retry.
+  const sent: unknown[] = Array.isArray(body) ? body : [body];
+  const logs = sent.filter(isStorableReviewBody) as ReviewBody[];
+  const skipped = sent.length - logs.length;
+  const reply = skipped ? { ok: true, skipped } : { ok: true };
   if (logs.length === 0) {
-    return NextResponse.json({ ok: true }, { headers: cookieCarrier.headers });
+    return NextResponse.json(reply, { headers: cookieCarrier.headers });
   }
 
   const supabase = createAdminSupabaseClient();
@@ -135,5 +143,5 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true }, { headers: cookieCarrier.headers });
+  return NextResponse.json(reply, { headers: cookieCarrier.headers });
 }

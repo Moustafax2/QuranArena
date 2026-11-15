@@ -76,6 +76,26 @@ export function isStorableCardBody(card: unknown): boolean {
     hasValidCardStates(card) && isFsrsStateBody(card.fsrs_state);
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * A review the reviews route can store as sent: uuid ids, a word id, a 1-4
+ * rating, a date, 0-3 states and a whole-number duration if sent (the
+ * review_log columns and checks of migration 002). Anything else would fail
+ * the whole batch in the database (code review of the flashcard port, #4).
+ */
+export function isStorableReviewBody(review: unknown): boolean {
+  return isRecord(review) &&
+    typeof review.id === "string" && UUID.test(review.id) &&
+    typeof review.session_id === "string" && UUID.test(review.session_id) &&
+    typeof review.word_id === "string" && review.word_id.length > 0 &&
+    isIntegerIn(review.rating, 1, 4) &&
+    isDateString(review.timestamp) &&
+    isIntegerIn(review.state_before, 0, 3) && isIntegerIn(review.state_after, 0, 3) &&
+    (review.review_duration_ms === undefined || review.review_duration_ms === null ||
+      isIntegerIn(review.review_duration_ms, 0, 2147483647));
+}
+
 /** A verse bookmark: a surah number and an ayah number (no surah has more than 286). */
 export function isBookmarkInput(value: unknown): value is { chapterId: number; verseNumber: number } {
   return isRecord(value) && isIntegerIn(value.chapterId, 1, 114) && isIntegerIn(value.verseNumber, 1, 286);
