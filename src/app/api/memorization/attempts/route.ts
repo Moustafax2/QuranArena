@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolvePlayerId } from "@/lib/multiplayer/resolve-player";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { fetchAllPages } from "@/lib/supabase/paging";
 
 type AttemptBody = {
   client_attempt_id: string;
@@ -50,14 +51,25 @@ export async function GET(request: Request) {
   }
 
   const supabase = createAdminSupabaseClient();
-  const { data, error } = await supabase
-    .from("memorization_attempts")
-    .select("*")
-    .eq("player_id", playerId)
-    .order("tested_at", { ascending: true });
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  let data;
+  try {
+    // Oldest first, as the client expects, and every page of it: one request
+    // stops at the API's 1000-row cap and would drop the newest (audit M4).
+    data = await fetchAllPages((from, to) =>
+      supabase
+        .from("memorization_attempts")
+        .select("*")
+        .eq("player_id", playerId)
+        .order("tested_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to)
+    );
+  } catch (error) {
+    const message = (error as { message?: unknown } | null)?.message;
+    return NextResponse.json(
+      { error: typeof message === "string" ? message : "Could not load memorization attempts." },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json(

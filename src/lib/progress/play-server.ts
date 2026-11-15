@@ -4,6 +4,7 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { Database } from "@/lib/supabase/types";
 import type { PlayProgressEvent, PlayProgressResponse, VerseHotspot } from "@/lib/progress/types";
 import { inferStoredRoundMode } from "@/lib/progress/utils";
+import { fetchAllPages, fetchInChunks } from "@/lib/supabase/paging";
 
 type RoundAnswerRow = Database["public"]["Tables"]["round_answers"]["Row"];
 type GameRoundRow = Database["public"]["Tables"]["game_rounds"]["Row"];
@@ -120,8 +121,10 @@ async function enrichRounds(rounds: GameRoundRow[]): Promise<Map<string, GameRou
     })
   );
 
+  // A backfill of the stored rounds: the response already carries the values,
+  // so a failed write is logged and retried on the next load.
   for (const update of updates) {
-    await supabase
+    const { error } = await supabase
       .from("game_rounds")
       .update({
         game_mode: update.game_mode,
@@ -130,6 +133,7 @@ async function enrichRounds(rounds: GameRoundRow[]): Promise<Map<string, GameRou
         prompt_page_number: update.prompt_page_number,
       })
       .eq("id", update.id);
+    if (error) console.error(`Could not backfill round ${update.id}.`, error.message);
   }
 
   return new Map(enrichedRounds.map((round) => [round.id, round]));
@@ -164,17 +168,24 @@ function normalizePlayEvents(
 export async function getPlayerPlayProgress(playerId: string): Promise<PlayProgressResponse> {
   const supabase = createAdminSupabaseClient();
 
-  const [{ data: player }, { data: answers }, { data: hotspots }] = await Promise.all([
+  // Every query's error is thrown (the route answers 500), so a failure is
+  // never shown as an empty play history (audit M4).
+  const [playerResult, answers, hotspotsResult] = await Promise.all([
     supabase
       .from("players")
       .select("id, display_name, total_points, total_wins, created_at")
       .eq("id", playerId)
       .maybeSingle(),
-    supabase
-      .from("round_answers")
-      .select("*")
-      .eq("player_id", playerId)
-      .order("server_received_at", { ascending: true }),
+    // Every page: one request stops at the API's 1000-row cap.
+    fetchAllPages((from, to) =>
+      supabase
+        .from("round_answers")
+        .select("*")
+        .eq("player_id", playerId)
+        .order("server_received_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
     supabase
       .from("verse_mistakes")
       .select("*")
@@ -183,16 +194,17 @@ export async function getPlayerPlayProgress(playerId: string): Promise<PlayProgr
       .limit(10),
   ]);
 
-  const roundIds = Array.from(new Set((answers ?? []).map((answer) => answer.round_id)));
-  const rounds =
-    roundIds.length > 0
-      ? (
-          await supabase
-            .from("game_rounds")
-            .select("*")
-            .in("id", roundIds)
-        ).data ?? []
-      : [];
+  if (playerResult.error) throw playerResult.error;
+  if (hotspotsResult.error) throw hotspotsResult.error;
+  const player = playerResult.data;
+  const hotspots = hotspotsResult.data;
+
+  // Looked up in chunks: every id goes into the request URL, and one URL with
+  // 1000 ids is refused (414), which used to leave the history empty.
+  const roundIds = Array.from(new Set((answers as RoundAnswerRow[]).map((answer) => answer.round_id)));
+  const rounds = await fetchInChunks(roundIds, (chunk) =>
+    supabase.from("game_rounds").select("*").in("id", chunk)
+  );
 
   const roundsById = await enrichRounds(rounds as GameRoundRow[]);
 
@@ -201,7 +213,7 @@ export async function getPlayerPlayProgress(playerId: string): Promise<PlayProgr
       PlayerRow,
       "id" | "display_name" | "total_points" | "total_wins" | "created_at"
     > | null) ?? null,
-    events: normalizePlayEvents((answers as RoundAnswerRow[] | null) ?? [], roundsById),
+    events: normalizePlayEvents(answers as RoundAnswerRow[], roundsById),
     hotspots: ((hotspots as VerseMistakeRow[] | null) ?? []).map((hotspot) => ({
       verse_key: hotspot.verse_key,
       mistake_count: hotspot.mistake_count,

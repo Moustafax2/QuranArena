@@ -22,12 +22,27 @@ type Filter = { kind: "eq" | "in"; column: string; value: unknown };
 const MAX_ROWS = 1000;
 
 /**
+ * The longest request URL the API gateway accepts. The local stack answers
+ * 414 URI Too Long past about 8 KB, and supabase-js returns that as an error.
+ */
+const MAX_URL_BYTES = 8192;
+
+/** Roughly the PostgREST URL supabase-js builds for a read: every filter value is in it. */
+function requestUrlLength(table: string, filters: Filter[]) {
+  return filters.reduce((length, f) => {
+    const value = f.kind === "eq" ? `eq.${String(f.value)}` : `in.(${(f.value as unknown[]).join(",")})`;
+    return length + `&${f.column}=${encodeURIComponent(value)}`.length;
+  }, `/rest/v1/${table}?select=*`.length);
+}
+
+/**
  * A Supabase query-builder stand-in over in-memory tables that behaves like
- * PostgREST: filters, ordering and .range()/.limit() apply, and no response
- * carries more than MAX_ROWS rows, whatever range was asked for. It records
+ * PostgREST: filters, ordering and .range()/.limit() apply, no response
+ * carries more than MAX_ROWS rows, whatever range was asked for, and a read
+ * whose URL is longer than MAX_URL_BYTES fails with a 414 error. It records
  * the size of every .in() list (each value ends up in the request URL).
  */
-function cappedSupabase(tables: Record<string, Row[]>, failOn?: (table: string, call: number) => boolean) {
+export function cappedSupabase(tables: Record<string, Row[]>, failOn?: (table: string, call: number) => boolean) {
   const inSizes: Array<{ table: string; size: number }> = [];
   const calls = new Map<string, number>();
   const client = {
@@ -54,6 +69,9 @@ function cappedSupabase(tables: Record<string, Row[]>, failOn?: (table: string, 
             return Promise.resolve({ data: null, error: { message: `${table} is unavailable` } }).then(resolve, reject);
           }
           if (write) return Promise.resolve({ data: null, error: null }).then(resolve, reject);
+          if (requestUrlLength(table, filters) > MAX_URL_BYTES) {
+            return Promise.resolve({ data: null, error: { message: "414 Request-URI Too Large", code: "414" } }).then(resolve, reject);
+          }
           let rows = (tables[table] ?? []).filter((row) => filters.every((f) =>
             f.kind === "eq" ? row[f.column] === f.value : (f.value as unknown[]).includes(row[f.column])
           ));
