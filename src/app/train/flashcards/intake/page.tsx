@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CardType, WordStatus } from "@/lib/types/flashcard";
 import type { LexicalEntry } from "@/lib/types/flashcard";
+import { SessionExpiredError } from "@/lib/storage/flashcard-storage-supabase";
 import {
   getSurahWords,
   filterNewWords,
@@ -33,7 +34,9 @@ function IntakeContent() {
         newWords = await filterNewWords(allWords);
       } catch (error) {
         console.error("Failed to load words:", error);
-        setLoadError("The words for this surah could not be loaded. Please check your connection and try again.");
+        setLoadError(error instanceof SessionExpiredError
+          ? error.message
+          : "The words for this surah could not be loaded. Please check your connection and try again.");
         setLoading(false);
         return;
       }
@@ -87,7 +90,7 @@ function IntakeContent() {
     } catch (error) {
       console.error("Failed to add words:", error);
       // Adding is idempotent (words already in the deck are skipped), so it is safe to retry.
-      setSaveError("Some words could not be saved. Please try again.");
+      setSaveError(error instanceof SessionExpiredError ? error.message : "Some words could not be saved. Please try again.");
       setSaving(false);
     }
   };

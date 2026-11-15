@@ -355,7 +355,9 @@ export async function runFlashcardApiTests() {
       await assert.rejects(storage.getFlashcards(), (e: unknown) => e instanceof storage.SessionExpiredError);
       assert.equal(store.has("qalamspace_reviews"), false);
 
-      // A real guest (never signed in, or signed out) still uses local storage.
+      // A real guest (never signed in, or signed out) still uses local storage:
+      // a new page view, which has not found a lapsed sign-in (Phase 2 D1).
+      (await import("@/lib/flashcard/session-expiry")).clearSessionExpired();
       globalThis.fetch = (async () => new Response(JSON.stringify({ error: "Authentication required." }), { status: 401 })) as typeof fetch;
       await storage.saveReviewLog(log);
       assert.equal(JSON.parse(store.get("qalamspace_reviews")!).length, 1);

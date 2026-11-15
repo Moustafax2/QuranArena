@@ -31,6 +31,8 @@ async function withBrowser<T>(store: Map<string, string>, fetchImpl: typeof fetc
     g.localStorage = saved.localStorage;
     globalThis.fetch = saved.fetch;
     console.error = saved.error;
+    // Each case is its own page view.
+    (await import("@/lib/flashcard/session-expiry")).clearSessionExpired();
   }
 }
 
@@ -127,5 +129,60 @@ export async function runUseAuthExpiryTests() {
     assert.equal(source.match(/sessionExpired: payload\.sessionExpired,/g)?.length, 2, "hydrate and refresh don't both pass it on");
     assert.match(source, /window\.location\.href = "\/api\/auth\/qf\/logout";/);
     assert.match(source, /fetch\("\/api\/multiplayer\/guest-token"/);
+  });
+}
+
+export async function runPageViewExpiryTests() {
+  const { readFileSync } = await import("node:fs");
+  const log = {
+    id: "00000000-0000-4000-8000-000000000001", card_id: "c1", word_id: "w", rating: 3 as const, timestamp: new Date(),
+    session_id: "00000000-0000-4000-8000-000000000002", state_before: 2, state_after: 2,
+  };
+
+  await runCase("D1: once the page view found a lapsed sign-in, a guest-looking 401 never writes to the device", async () => {
+    const expiry = await import("@/lib/flashcard/session-expiry");
+    const store = new Map<string, string>();
+    try {
+      await withBrowser(store, (async () => GUEST()) as typeof fetch, async () => {
+        const storage = await import("@/lib/storage/flashcard-storage-supabase");
+        // useAuth (the Header's or the page's) saw sessionExpired from the session route.
+        expiry.noteSessionExpired();
+        await assert.rejects(storage.saveReviewLog(log), (e: unknown) => e instanceof storage.SessionExpiredError);
+        await assert.rejects(storage.addFlashcards(JSON.parse(guestDeck).map((c: Record<string, unknown>) => ({ ...c, created_at: new Date(), fsrs_state: { ...(c.fsrs_state as object), due: new Date() } }))),
+          (e: unknown) => e instanceof storage.SessionExpiredError);
+        await assert.rejects(storage.getFlashcards(), (e: unknown) => e instanceof storage.SessionExpiredError, "the stale device copy was shown");
+        assert.equal(store.size, 0, "something was written to the device");
+
+        // A real guest's page view (nothing found) still uses this browser.
+        expiry.clearSessionExpired();
+        await storage.saveReviewLog(log);
+        assert.equal(JSON.parse(store.get("qalamspace_reviews")!).length, 1);
+      });
+
+      // A flashcard request answered SESSION_EXPIRED records it for the later ones.
+      const later = new Map<string, string>();
+      let calls = 0;
+      await withBrowser(later, (async () => (calls++ === 0 ? EXPIRED() : GUEST())) as typeof fetch, async () => {
+        const storage = await import("@/lib/storage/flashcard-storage-supabase");
+        await assert.rejects(storage.getFlashcards(), (e: unknown) => e instanceof storage.SessionExpiredError);
+        await assert.rejects(storage.saveReviewLog(log), (e: unknown) => e instanceof storage.SessionExpiredError);
+      });
+      assert.equal(later.size, 0);
+    } finally {
+      expiry.clearSessionExpired();
+    }
+  });
+
+  await runCase("D1: the flashcard pages show 'Sign in again' for a lapsed sign-in", () => {
+    const hub = readFileSync("src/app/train/flashcards/page.tsx", "utf8");
+    // The hub waits for the session before it loads, and starts nothing when it expired.
+    assert.match(hub, /const \{[^}]*sessionExpired[^}]*\} = useAuth\(\);/);
+    assert.match(hub, /useEffect\(\(\) => \{\s*(?:\/\/[^\n]*\n\s*)*if \(authLoading\) return;/, "the hub loads before the session is known");
+    assert.match(hub, /if \(sessionExpired\) throw new SessionExpiredError\(\);/);
+    assert.match(hub, /\}, \[authLoading, sessionExpired\]\);/);
+    // Pages that write show the expired-session message rather than a generic one.
+    for (const page of ["src/app/train/flashcards/intake/page.tsx", "src/app/train/flashcards/settings/page.tsx"]) {
+      assert.match(readFileSync(page, "utf8"), /instanceof SessionExpiredError/, page);
+    }
   });
 }

@@ -14,9 +14,14 @@ import {
   getAlgorithmPreference,
   saveAlgorithmChoice,
   clearAllSM2States,
+  SessionExpiredError,
 } from "@/lib/storage/flashcard-storage-supabase";
 import { DEFAULT_PREFERENCES, DEFAULT_FSRS_PARAMETERS } from "@/lib/types/flashcard";
 import { settle } from "@/lib/settle";
+
+function expiredMessage(error: unknown): string | null {
+  return error instanceof SessionExpiredError ? error.message : null;
+}
 
 // ──────────────────────────────────────────────────────────────────
 // Info tooltip component
@@ -256,7 +261,8 @@ export default function SettingsPage() {
       setLoading(false);
       if (!result.ok) {
         console.error("Failed to load settings:", result.error);
-        setError("Could not load your saved settings. Showing defaults; saving may overwrite them.");
+        // An expired session says so and asks the user to sign in again (M10, Phase 2 D1).
+        setError(expiredMessage(result.error) ?? "Could not load your saved settings. Showing defaults; saving may overwrite them.");
         return;
       }
       const [preferences, logs] = result.value;
@@ -277,7 +283,7 @@ export default function SettingsPage() {
     setBusy(false);
     if (!result.ok) {
       console.error("Failed to save settings:", result.error);
-      setError("Your settings could not be saved. Please try again.");
+      setError(expiredMessage(result.error) ?? "Your settings could not be saved. Please try again.");
       return;
     }
     setSaved(true);
@@ -295,7 +301,7 @@ export default function SettingsPage() {
     setBusy(false);
     if (!result.ok) {
       console.error("Failed to reset data:", result.error);
-      setError("Your data could not be fully reset. Please try again.");
+      setError(expiredMessage(result.error) ?? "Your data could not be fully reset. Please try again.");
       return;
     }
     router.push("/train/flashcards");
@@ -338,7 +344,7 @@ export default function SettingsPage() {
     } catch (e) {
       console.error("Failed to save algorithm:", e);
       setPrefs(previous);
-      setError("The algorithm change could not be saved to your account. Please try again.");
+      setError(expiredMessage(e) ?? "The algorithm change could not be saved to your account. Please try again.");
     }
   };
 

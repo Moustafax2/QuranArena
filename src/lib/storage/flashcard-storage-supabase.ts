@@ -19,6 +19,7 @@ import type {
 import { DEFAULT_PREFERENCES, DEFAULT_FSRS_PARAMETERS, FSRSState } from "@/lib/types/flashcard";
 import * as localFlashcardStorage from "@/lib/storage/flashcard-storage";
 import { SESSION_EXPIRED_CODE } from "@/lib/flashcard/auth-required";
+import { isSessionExpired, noteSessionExpired } from "@/lib/flashcard/session-expiry";
 import { normalizeImportedCard } from "@/lib/flashcard/import-cards";
 
 const FSRS_PARAMS_KEY = "qalamspace_fsrs_params";
@@ -184,7 +185,14 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T | null
   const res = await fetch(url, options);
   if (res.status === 401) {
     const body = (await res.json().catch(() => null)) as { code?: unknown } | null;
-    if (body?.code === SESSION_EXPIRED_CODE) throw new SessionExpiredError();
+    if (body?.code === SESSION_EXPIRED_CODE) {
+      noteSessionExpired();
+      throw new SessionExpiredError();
+    }
+    // The session route clears a lapsed sign-in's cookie, so later requests
+    // of the same page view look like a guest's; they still must not write
+    // the account's study to this browser (Phase 2 D1).
+    if (isSessionExpired()) throw new SessionExpiredError();
     return null; // guest → localStorage fallback
   }
   if (!res.ok) {

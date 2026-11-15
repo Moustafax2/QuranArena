@@ -338,7 +338,7 @@ function SRExplainerModal({ onClose }: { onClose: () => void }) {
 }
 
 export default function FlashcardsHubPage() {
-  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { isAuthenticated, loading: authLoading, sessionExpired } = useAuth();
   const [dueCount, setDueCount] = useState(0);
   const [newCount, setNewCount] = useState(0);
   const [totalCards, setTotalCards] = useState(0);
@@ -360,8 +360,13 @@ export default function FlashcardsHubPage() {
   }
 
   useEffect(() => {
+    // Wait for the session: a lapsed sign-in is reported only to the first
+    // requests of the page, and then nothing may be read or written as a
+    // guest's (Phase 2 D1). The next page load is a plain guest's.
+    if (authLoading) return;
     async function initializeAndLoad() {
       try {
+        if (sessionExpired) throw new SessionExpiredError();
         await migrateFromLocalStorage();
         setUnsyncedCards(getUnsyncedFlashcardCount());
         await loadStats();
@@ -381,7 +386,7 @@ export default function FlashcardsHubPage() {
       }
     }
     initializeAndLoad();
-  }, []);
+  }, [authLoading, sessionExpired]);
 
   if (loading) {
     return (
