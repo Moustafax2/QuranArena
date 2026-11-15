@@ -70,6 +70,34 @@ export default function CreditsPage() {
         </section>
 
         <section>
+          <h2 className="mb-3 text-2xl font-semibold text-white">Spaced repetition algorithms</h2>
+          <p>
+            Flashcard reviews are scheduled with FSRS, the Free Spaced Repetition Scheduler algorithm
+            developed by the {" "}
+            <a href="https://github.com/open-spaced-repetition">Open Spaced Repetition</a> project,
+            through the {" "}
+            <a href="https://github.com/open-spaced-repetition/ts-fsrs">ts-fsrs</a> library, copyright ©
+            Open Spaced Repetition, used under the MIT License. The MIT License notice is retained with
+            the library.
+          </p>
+          <p className="mt-4">
+            The optional Classic scheduler is based on SM-2, created by the authors of SuperMemo.
+            Algorithm SM-2, (C) Copyright SuperMemo World, 1991. {" "}
+            <a href="https://www.supermemo.com">https://www.supermemo.com</a>, {" "}
+            <a href="https://www.supermemo.eu">https://www.supermemo.eu</a>.
+          </p>
+          <p className="mt-4">
+            Our Classic scheduler extends SM-2: a new card first goes through short learning steps
+            measured in minutes, you answer with four buttons instead of a 0 to 5 grade, and the Hard
+            and Easy answers get their own interval rules. Its intervals therefore differ from the
+            original algorithm. See the {" "}
+            <a href="https://www.supermemo.com/en/blog/application-of-a-computer-to-improve-the-results-obtained-in-working-with-the-supermemo-method">original SM-2 description</a> {" "}
+            and SuperMemo&apos;s {" "}
+            <a href="https://supermemopedia.com/wiki/Licensing_SuperMemo_Algorithm">SM-2 licensing terms</a>.
+          </p>
+        </section>
+
+        <section>
           <h2 className="mb-3 text-2xl font-semibold text-white">Corrections</h2>
           <p>
             To report a source, attribution or content correction, email {" "}
