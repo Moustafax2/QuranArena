@@ -13,6 +13,7 @@ import { runUserCountTests } from "../src/lib/flashcard/user-counts.test";
 import { runFlashcardDataTests } from "../src/lib/flashcard/data-fixes.test";
 import { runFlashcardPrivacyTests } from "../src/lib/flashcard/privacy.test";
 import { runFlashcardReviewFixTests } from "../src/lib/flashcard/review-fixes.test";
+import { runSessionExpiryTests } from "../src/lib/flashcard/session-expiry.test";
 import { runFlagWordingTests, runReviewActionTests, runSettingsResetTests, runShortcutTests, runStatsTests } from "../src/lib/flashcard/stats.test";
 
 async function main() {
@@ -42,6 +43,7 @@ async function main() {
     await runFlashcardDataTests();
     await runFlashcardPrivacyTests();
     await runFlashcardReviewFixTests();
+    await runSessionExpiryTests();
     console.log("All progress helper tests passed.");
   } catch (error) {
     console.error("Progress helper tests failed.");

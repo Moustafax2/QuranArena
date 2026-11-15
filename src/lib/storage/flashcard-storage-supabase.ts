@@ -624,6 +624,8 @@ export async function importData(jsonData: string): Promise<{ skippedCards: unkn
       await saveReviewLogs(readable);
     }
   } catch (error) {
+    // An expired session must reach the page as itself (M10, Phase 2 D1).
+    if (error instanceof SessionExpiredError) throw error;
     console.error("Failed to import data:", error);
     throw new Error("Failed to import data");
   }
@@ -690,6 +692,7 @@ async function migrateLegacySM2States(): Promise<void> {
     if (Object.keys(pending).length === 0) clearAllSM2States();
     else localStorage.setItem(SM2_STATES_KEY, JSON.stringify(pending));
   } catch (error) {
+    if (error instanceof SessionExpiredError) throw error;
     console.error("Failed to move SM-2 states to card storage:", error);
   }
 }
@@ -709,6 +712,9 @@ async function migrateDeviceSchedulerPreferences(): Promise<void> {
     if (row.fsrs_params === null || typeof row.fsrs_params !== "object") await savePreferences(await getPreferences());
     localStorage.setItem(DEVICE_PREFS_SYNCED_KEY, "true");
   } catch (error) {
+    // Often the only request that still carries the lapsed session's cookie
+    // (the session route clears it), so it must not be swallowed (Phase 2 D1).
+    if (error instanceof SessionExpiredError) throw error;
     console.error("Failed to upload device scheduler preferences:", error);
   }
 }
@@ -784,6 +790,7 @@ async function uploadLocalData(): Promise<boolean> {
     localStorage.setItem(STORAGE_KEYS.MIGRATED, "true");
     return true;
   } catch (error) {
+    if (error instanceof SessionExpiredError) throw error;
     console.error("Failed to migrate from localStorage:", error);
     return false;
   }
