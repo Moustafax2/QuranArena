@@ -57,6 +57,7 @@ export async function runFlashcardReviewFixTests() {
   await runReviewUploadValidationTests();
   await runUnknownWordTests();
   await runReviewPageLockTests();
+  await runAlgorithmSwitchTests();
 }
 
 async function runReviewUploadValidationTests() {
@@ -157,5 +158,45 @@ async function runReviewPageLockTests() {
     for (const handler of ["handleReview", "handleUndo", "handleDelete", "handleSkipMissing"]) {
       assert.match(page, new RegExp(`const ${handler} = [^\\n]*runExclusive\\(busyRef,`), `${handler} does not take the review lock`);
     }
+  });
+}
+
+async function runAlgorithmSwitchTests() {
+  await runCase("Review #6: a failed algorithm switch puts the device back, so the next load doesn't undo it silently", async () => {
+    const store = new Map<string, string>([["qalamspace_algorithm", "fsrs"]]);
+    const g = globalThis as unknown as Record<string, unknown>;
+    const saved = { window: g.window, localStorage: g.localStorage, fetch: globalThis.fetch };
+    g.window = globalThis;
+    g.localStorage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    };
+    let fail = true;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url === "/api/flashcards/preferences" && init?.method === "PUT" && fail) {
+        return Response.json({ error: "Could not save preferences." }, { status: 500 });
+      }
+      return Response.json({ ok: true });
+    }) as typeof fetch;
+    try {
+      const storage = await import("@/lib/storage/flashcard-storage-supabase");
+      const { DEFAULT_FSRS_PARAMETERS, DEFAULT_PREFERENCES } = await import("@/lib/types/flashcard");
+      const prefs = { ...DEFAULT_PREFERENCES, algorithm: "fsrs" as const };
+      await assert.rejects(storage.saveAlgorithmChoice(prefs, "sm2", DEFAULT_FSRS_PARAMETERS));
+      assert.equal(storage.getAlgorithmPreference(), "fsrs", "the device kept a switch the account never saved");
+      fail = false;
+      await storage.saveAlgorithmChoice(prefs, "sm2", DEFAULT_FSRS_PARAMETERS);
+      assert.equal(storage.getAlgorithmPreference(), "sm2");
+    } finally {
+      g.window = saved.window;
+      g.localStorage = saved.localStorage;
+      globalThis.fetch = saved.fetch;
+    }
+    const page = readFileSync("src/app/train/flashcards/settings/page.tsx", "utf8");
+    const handler = page.match(/const confirmAlgoSwitch = async \(\) => \{[\s\S]*?\n {2}\};/)?.[0] ?? "";
+    assert.match(handler, /saveAlgorithmChoice\(/, "the settings page doesn't use saveAlgorithmChoice");
+    assert.doesNotMatch(handler, /saveAlgorithmPreference\(/, "the settings page still writes the device copy before the save");
+    assert.match(handler, /catch[\s\S]*setPrefs\(/, "the settings page doesn't show the old algorithm again after a failed switch");
   });
 }

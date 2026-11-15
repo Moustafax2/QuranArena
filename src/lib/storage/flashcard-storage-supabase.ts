@@ -506,6 +506,27 @@ export async function savePreferences(
   saveFSRSParameters(fsrsParams);
 }
 
+/**
+ * Settings → switch algorithm. The scheduler reads the device copy, so it is
+ * set first; if the account can't save the choice, the device goes back to the
+ * previous algorithm. Otherwise the next getPreferences would restore the
+ * account's old choice over it without telling the user (code review #6).
+ */
+export async function saveAlgorithmChoice(
+  prefs: UserPreferences,
+  algorithm: "fsrs" | "sm2",
+  fsrsParams: FSRSParameters
+): Promise<void> {
+  const previous = getAlgorithmPreference();
+  saveAlgorithmPreference(algorithm);
+  try {
+    await savePreferences({ ...prefs, algorithm }, fsrsParams);
+  } catch (error) {
+    saveAlgorithmPreference(previous);
+    throw error;
+  }
+}
+
 export async function getPreferences(): Promise<UserPreferences> {
   const row = await apiFetch<Record<string, unknown>>("/api/flashcards/preferences");
   if (row === null) return localFlashcardStorage.getPreferences();

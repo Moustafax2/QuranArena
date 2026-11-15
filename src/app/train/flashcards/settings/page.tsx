@@ -12,7 +12,7 @@ import {
   getFSRSParameters,
   getReviewLog,
   getAlgorithmPreference,
-  saveAlgorithmPreference,
+  saveAlgorithmChoice,
   clearAllSM2States,
 } from "@/lib/storage/flashcard-storage-supabase";
 import { DEFAULT_PREFERENCES, DEFAULT_FSRS_PARAMETERS } from "@/lib/types/flashcard";
@@ -327,16 +327,17 @@ export default function SettingsPage() {
 
   const confirmAlgoSwitch = async () => {
     if (!algoSwitchTarget) return;
-    const next = { ...prefs, algorithm: algoSwitchTarget };
-    setPrefs(next);
-    saveAlgorithmPreference(algoSwitchTarget);
+    const previous = prefs;
+    setPrefs({ ...prefs, algorithm: algoSwitchTarget });
     setAlgoSwitchTarget(null);
     // The choice is synced with the other preferences, so save it right away.
+    // If that fails, the device and this page go back to the old algorithm.
     setError("");
     try {
-      await savePreferences(next, fsrsParams);
+      await saveAlgorithmChoice(previous, algoSwitchTarget, fsrsParams);
     } catch (e) {
       console.error("Failed to save algorithm:", e);
+      setPrefs(previous);
       setError("The algorithm change could not be saved to your account. Please try again.");
     }
   };
