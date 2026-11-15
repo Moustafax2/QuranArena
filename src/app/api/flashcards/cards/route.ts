@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getUsableSession } from "@/lib/qf-user/session";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import { authRequiredBody } from "@/lib/flashcard/auth-required";
+import { flashcardSession } from "@/lib/flashcard/auth-required";
 import type { Database } from "@/lib/supabase/types";
 import { clientErrorMessage } from "@/lib/public-error";
 import { fetchAllPages, fetchInChunks } from "@/lib/supabase/paging";
@@ -39,10 +39,9 @@ function cardFields(card: CardBody, userId: string): CardInsert {
 
 export async function GET(request: Request) {
   const cookieCarrier = new NextResponse();
-  const session = await getUsableSession(cookieCarrier.cookies);
-  if (!session) {
-    return NextResponse.json(authRequiredBody(request), { status: 401 });
-  }
+  const auth = await flashcardSession(request, cookieCarrier, getUsableSession);
+  if (auth.response) return auth.response;
+  const { session } = auth;
 
   const supabase = createAdminSupabaseClient();
   try {
@@ -66,10 +65,9 @@ export async function GET(request: Request) {
 // already in the deck are left untouched.
 export async function POST(request: Request) {
   const cookieCarrier = new NextResponse();
-  const session = await getUsableSession(cookieCarrier.cookies);
-  if (!session) {
-    return NextResponse.json(authRequiredBody(request), { status: 401 });
-  }
+  const auth = await flashcardSession(request, cookieCarrier, getUsableSession);
+  if (auth.response) return auth.response;
+  const { session } = auth;
 
   const body = (await request.json().catch(() => null)) as CardBody | CardBody[] | null;
   if (!body) {
@@ -100,10 +98,9 @@ export async function POST(request: Request) {
 // ones with the client's id.
 export async function PUT(request: Request) {
   const cookieCarrier = new NextResponse();
-  const session = await getUsableSession(cookieCarrier.cookies);
-  if (!session) {
-    return NextResponse.json(authRequiredBody(request), { status: 401 });
-  }
+  const auth = await flashcardSession(request, cookieCarrier, getUsableSession);
+  if (auth.response) return auth.response;
+  const { session } = auth;
 
   const body = (await request.json().catch(() => null)) as unknown[] | null;
   if (!Array.isArray(body)) {

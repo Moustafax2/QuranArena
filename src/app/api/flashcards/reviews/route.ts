@@ -1,17 +1,16 @@
 import { NextResponse } from "next/server";
 import { getUsableSession } from "@/lib/qf-user/session";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import { authRequiredBody } from "@/lib/flashcard/auth-required";
+import { flashcardSession } from "@/lib/flashcard/auth-required";
 import { clientErrorMessage } from "@/lib/public-error";
 import { intParam, isStorableReviewBody } from "@/lib/api-validation";
 import { fetchInChunks } from "@/lib/supabase/paging";
 
 export async function GET(request: Request) {
   const cookieCarrier = new NextResponse();
-  const session = await getUsableSession(cookieCarrier.cookies);
-  if (!session) {
-    return NextResponse.json(authRequiredBody(request), { status: 401 });
-  }
+  const auth = await flashcardSession(request, cookieCarrier, getUsableSession);
+  if (auth.response) return auth.response;
+  const { session } = auth;
 
   const { searchParams } = new URL(request.url);
   const supabase = createAdminSupabaseClient();
@@ -74,10 +73,9 @@ type ReviewBody = {
 // the client-generated id, so a retried upload never fails on a duplicate.
 export async function POST(request: Request) {
   const cookieCarrier = new NextResponse();
-  const session = await getUsableSession(cookieCarrier.cookies);
-  if (!session) {
-    return NextResponse.json(authRequiredBody(request), { status: 401 });
-  }
+  const auth = await flashcardSession(request, cookieCarrier, getUsableSession);
+  if (auth.response) return auth.response;
+  const { session } = auth;
 
   const body = (await request.json().catch(() => null)) as ReviewBody | ReviewBody[] | null;
   if (!body) {

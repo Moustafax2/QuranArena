@@ -4,14 +4,18 @@ import { resolvePlayerId } from "@/lib/multiplayer/resolve-player";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function GET(request: NextRequest) {
+  // Polled every second or two: without a cookie store, each poll inside the
+  // refresh window would refresh and throw the rotated tokens away (audit H2).
+  const cookieCarrier = new NextResponse();
+  const headers = cookieCarrier.headers;
   try {
     const admin = createAdminSupabaseClient();
-    const playerId = await resolvePlayerId(request);
+    const playerId = await resolvePlayerId(request, cookieCarrier.cookies);
     const code = request.nextUrl.searchParams.get("code");
     const roomId = request.nextUrl.searchParams.get("room");
     const gameId = request.nextUrl.searchParams.get("game");
     if (code ? !/^[A-Z0-9]{6}$/i.test(code) : !uuid.test(gameId ?? roomId ?? "")) {
-      return NextResponse.json({ error: "Invalid room or game." }, { status: 400 });
+      return NextResponse.json({ error: "Invalid room or game." }, { status: 400, headers });
     }
     let targetRoom = roomId;
     let game = null;
@@ -25,15 +29,15 @@ export async function GET(request: NextRequest) {
     query = code ? query.eq("code", code.toUpperCase()) : query.eq("id", targetRoom ?? "00000000-0000-0000-0000-000000000000");
     const { data: room, error } = await query.maybeSingle();
     if (error) throw error;
-    if (!room) return NextResponse.json({ error: "Room unavailable." }, { status: 404 });
+    if (!room) return NextResponse.json({ error: "Room unavailable." }, { status: 404, headers });
     const membership = playerId ? await admin.from("room_players").select("status")
       .eq("room_id", room.id).eq("player_id", playerId).maybeSingle() : { data: null, error: null };
     if (membership.error) throw membership.error;
     const active = membership.data?.status === "active";
     if (!active) {
       // A share code reveals only the minimum information needed to join.
-      if (code) return NextResponse.json({ room: { id: room.id, code: room.code, status: room.status, game_mode: room.game_mode, settings: room.settings, host_id: "", created_at: room.created_at }, membership: membership.data?.status ?? "missing", game: null, players: [] });
-      return NextResponse.json({ error: "Active room membership required." }, { status: 403 });
+      if (code) return NextResponse.json({ room: { id: room.id, code: room.code, status: room.status, game_mode: room.game_mode, settings: room.settings, host_id: "", created_at: room.created_at }, membership: membership.data?.status ?? "missing", game: null, players: [] }, { headers });
+      return NextResponse.json({ error: "Active room membership required." }, { status: 403, headers });
     }
     if (!game) {
       const result = await admin.from("games").select("*").eq("room_id", room.id).order("started_at", { ascending: false }).limit(1).maybeSingle();
@@ -47,7 +51,7 @@ export async function GET(request: NextRequest) {
       player_id: row.player_id, score: row.score, is_host: row.player_id === room.host_id,
       display_name: (Array.isArray(row.players) ? row.players[0] : row.players)?.display_name ?? "Player",
     }));
-    if (!gameId || !game) return NextResponse.json({ room, membership: "active", game, players });
+    if (!gameId || !game) return NextResponse.json({ room, membership: "active", game, players }, { headers });
     const roundsResult = await admin.from("game_rounds").select("*").eq("game_id", gameId)
       .not("started_at", "is", null).order("round_number");
     if (roundsResult.error) throw roundsResult.error;
@@ -61,8 +65,8 @@ export async function GET(request: NextRequest) {
     const answersResult = completed.length ? await admin.from("round_answers")
       .select("round_id, player_id, answer_verse_key, is_correct, points_awarded").in("round_id", completed).eq("player_id", playerId!) : { data: [], error: null };
     if (answersResult.error) throw answersResult.error;
-    return NextResponse.json({ room, membership: "active", game, players, rounds, answers: answersResult.data });
+    return NextResponse.json({ room, membership: "active", game, players, rounds, answers: answersResult.data }, { headers });
   } catch {
-    return NextResponse.json({ error: "Could not load multiplayer state." }, { status: 503 });
+    return NextResponse.json({ error: "Could not load multiplayer state." }, { status: 503, headers });
   }
 }

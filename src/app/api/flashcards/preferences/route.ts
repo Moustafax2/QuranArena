@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
 import { getUsableSession } from "@/lib/qf-user/session";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import { authRequiredBody } from "@/lib/flashcard/auth-required";
+import { flashcardSession } from "@/lib/flashcard/auth-required";
 import { clientErrorMessage } from "@/lib/public-error";
 
 export async function GET(request: Request) {
   const cookieCarrier = new NextResponse();
-  const session = await getUsableSession(cookieCarrier.cookies);
-  if (!session) {
-    return NextResponse.json(authRequiredBody(request), { status: 401 });
-  }
+  const auth = await flashcardSession(request, cookieCarrier, getUsableSession);
+  if (auth.response) return auth.response;
+  const { session } = auth;
 
   const supabase = createAdminSupabaseClient();
   const { data, error } = await supabase
@@ -27,10 +26,9 @@ export async function GET(request: Request) {
 
 export async function PUT(request: Request) {
   const cookieCarrier = new NextResponse();
-  const session = await getUsableSession(cookieCarrier.cookies);
-  if (!session) {
-    return NextResponse.json(authRequiredBody(request), { status: 401 });
-  }
+  const auth = await flashcardSession(request, cookieCarrier, getUsableSession);
+  if (auth.response) return auth.response;
+  const { session } = auth;
 
   const prefs = await request.json().catch(() => null);
   if (!prefs) {

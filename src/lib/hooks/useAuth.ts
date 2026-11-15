@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import type { Database } from "@/lib/supabase/types";
 import { forgetAccountSchedulerCopy } from "@/lib/privacy/browser-storage";
 import { clearSessionExpired, isSessionExpired, noteSessionExpired } from "@/lib/flashcard/session-expiry";
+import { AUTH_STORAGE_REFRESH_DELAY_MS, createSingleFlight, shouldRefreshAuthOnStorage } from "@/lib/auth-refresh";
 
 type Player = Database["public"]["Tables"]["players"]["Row"];
 
@@ -37,7 +39,14 @@ interface SessionResponse {
 
 const GUEST_STORAGE_KEY = "qalamspace_guest_player";
 
-export function useAuth(): AuthState {
+const AuthContext = createContext<AuthState | null>(null);
+
+/**
+ * Holds the one client-side copy of the auth state. Every useAuth() caller
+ * used to fetch the session itself, so one page load sent several parallel
+ * requests that each tried to refresh the same token (audit H2).
+ */
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<Omit<AuthState, "logout" | "refresh">>({
     player: null,
     user: null,
@@ -77,37 +86,28 @@ export function useAuth(): AuthState {
         isAuthenticated: false,
         isGuest: false,
         sessionExpired: isSessionExpired(),
+        // The session could not be read (a 503 while QF or the database is
+        // down, or offline). It says nothing about who is signed in (H2).
+        unavailable: true,
       };
     }
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+  // At most one session request in flight; every trigger below shares it, so
+  // following navigation and focus doesn't bring back the request storms of
+  // per-component fetching (audit H2).
+  const requests = useMemo(() => createSingleFlight(loadSession), [loadSession]);
 
-    async function hydrate() {
-      const payload = await loadSession();
-      if (cancelled) return;
-
-      setState({
-        player: payload.player,
-        user: payload.user,
-        isAuthenticated: payload.isAuthenticated,
-        bookmarkSync: "bookmarkSync" in payload && payload.bookmarkSync === true,
-        isGuest: payload.isGuest,
-        sessionExpired: payload.sessionExpired,
-        loading: false,
-      });
+  // Whether a session read in this page view has had an answer. A failed
+  // re-read (focus, navigation) then keeps what is shown, so a QF outage does
+  // not make a signed-in page look signed out; the next read decides (H2).
+  const answered = useRef(false);
+  const apply = useCallback((payload: Awaited<ReturnType<typeof loadSession>>) => {
+    if ("unavailable" in payload) {
+      if (answered.current) return;
+    } else {
+      answered.current = true;
     }
-
-    void hydrate();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [loadSession]);
-
-  const refresh = useCallback(async () => {
-    const payload = await loadSession();
     setState({
       player: payload.player,
       user: payload.user,
@@ -117,7 +117,42 @@ export function useAuth(): AuthState {
       sessionExpired: payload.sessionExpired,
       loading: false,
     });
-  }, [loadSession]);
+  }, []);
+
+  /** Re-reads the session after a change this page made (sign-in, a finished game). */
+  const refresh = useCallback(async () => {
+    apply(await requests.fresh());
+  }, [apply, requests]);
+
+  // Client-side navigation (the account page after a game or a dev sign-in)
+  // shows the current session and points, not the ones from the first load.
+  const pathname = usePathname();
+  useEffect(() => {
+    let cancelled = false;
+    void requests.join().then(payload => { if (!cancelled) apply(payload); });
+    return () => { cancelled = true; };
+  }, [pathname, requests, apply]);
+
+  // Returning to the tab, and a privacy-controls clear() in another tab.
+  useEffect(() => {
+    let storageTimer: number | undefined;
+    const reload = () => { void requests.join().then(apply); };
+    const onVisible = () => { if (document.visibilityState === "visible") reload(); };
+    const onStorage = (event: StorageEvent) => {
+      if (!shouldRefreshAuthOnStorage(event.key)) return;
+      window.clearTimeout(storageTimer);
+      storageTimer = window.setTimeout(reload, AUTH_STORAGE_REFRESH_DELAY_MS);
+    };
+    window.addEventListener("focus", reload);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.clearTimeout(storageTimer);
+      window.removeEventListener("focus", reload);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [requests, apply]);
 
   const logout = useCallback(async () => {
     // The device copy of the account's flashcard scheduler settings stays
@@ -130,9 +165,12 @@ export function useAuth(): AuthState {
     window.location.href = "/api/auth/qf/logout";
   }, []);
 
-  return {
-    ...state,
-    logout,
-    refresh,
-  };
+  const value = useMemo<AuthState>(() => ({ ...state, logout, refresh }), [state, logout, refresh]);
+  return createElement(AuthContext.Provider, { value }, children);
+}
+
+export function useAuth(): AuthState {
+  const value = useContext(AuthContext);
+  if (!value) throw new Error("useAuth() must be used inside <AuthProvider>.");
+  return value;
 }

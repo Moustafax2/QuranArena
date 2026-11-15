@@ -50,6 +50,23 @@ export async function exchangeAuthorizationCode(input: {
   return (await response.json()) as QfTokenResponse;
 }
 
+/**
+ * QF definitively refused the refresh (a 4xx: `invalid_grant` for an expired,
+ * revoked or reused token, but also `invalid_client`, `invalid_request` or a
+ * bare 401). Only this ends the session; network errors, timeouts, 5xx, 408
+ * and 429 are transient (audit H2).
+ */
+export class QfRefreshRejectedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "QfRefreshRejectedError";
+  }
+}
+
+// Concurrent requests wait on one shared refresh, so a token request that
+// never answers must not hold them forever (audit H2).
+const TOKEN_REQUEST_TIMEOUT_MS = 15000;
+
 export async function refreshAccessToken(refreshToken: string): Promise<QfTokenResponse> {
   const discovery = await getQfDiscoveryDocument();
   const clientId = getQfClientId();
@@ -69,9 +86,18 @@ export async function refreshAccessToken(refreshToken: string): Promise<QfTokenR
     },
     body: body.toString(),
     cache: "no-store",
+    signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
   });
 
   if (!response.ok) {
+    // Any other 4xx is permanent: retrying the same request can't succeed,
+    // and keeping the cookies would fail every request until they expire.
+    // 408 (timeout) and 429 (rate limit) are the exceptions a retry fixes.
+    if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
+      throw new QfRefreshRejectedError(
+        `Quran Foundation rejected the refresh token (${response.status}).`
+      );
+    }
     throw new Error(
       `Quran Foundation token refresh failed (${response.status}).`
     );

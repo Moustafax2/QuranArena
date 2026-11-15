@@ -25,3 +25,35 @@ export function authRequiredBody(request: Request): { error: string; code?: stri
     ? { error: "Your sign-in has expired. Sign in again to keep your progress in sync.", code: SESSION_EXPIRED_CODE }
     : { error: "Authentication required." };
 }
+
+/** The JSON body of the 503 when the sign-in can't be checked right now. */
+export const SESSION_UNAVAILABLE_BODY = { error: "Your sign-in could not be checked right now. Please try again." };
+
+/**
+ * The account session of a flashcard request, or the reply to send instead.
+ * `carrier` is the route's cookie carrier; every reply here carries its
+ * headers, so a definitive sign-out clears the cookies. The session lookup is
+ * passed in, so this file stays free of server code (the browser client
+ * imports it too).
+ *
+ * - No usable session: 401, SESSION_EXPIRED when the request carried a sign-in
+ *   cookie (M10, Phase 2 D1).
+ * - The lookup threw (QF or the database unreachable while the access token
+ *   has expired): a retryable 503, never SESSION_EXPIRED, and the cookies are
+ *   kept for the next attempt (audit H2).
+ */
+export async function flashcardSession<Cookies, Session>(
+  request: Request,
+  carrier: { cookies: Cookies; headers: Headers },
+  getSession: (cookies: Cookies) => Promise<Session | null>
+): Promise<{ session: Session; response?: undefined } | { session?: undefined; response: Response }> {
+  let session: Session | null;
+  try {
+    session = await getSession(carrier.cookies);
+  } catch (error) {
+    console.error("Could not check the account session.", error);
+    return { response: Response.json(SESSION_UNAVAILABLE_BODY, { status: 503, headers: carrier.headers }) };
+  }
+  if (!session) return { response: Response.json(authRequiredBody(request), { status: 401, headers: carrier.headers }) };
+  return { session };
+}

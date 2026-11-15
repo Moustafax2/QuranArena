@@ -733,6 +733,12 @@ export default function GameRoomPage({ params, searchParams }: Props) {
   const isHost = player?.id === roomInfo?.host_id;
   const phase: GamePhase = gameState.phase;
 
+  // The game just awarded points: re-read the shared auth state so the header
+  // and the account page show the new totals (audit H2: one shared state).
+  useEffect(() => {
+    if (phase === "game_over") void refresh();
+  }, [phase, refresh]);
+
   async function handleStartGame() {
     if (!roomInfo || !player || starting) return;
     setStarting(true);

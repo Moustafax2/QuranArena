@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/hooks/useAuth";
 
 interface DevPlayer {
   id: string;
@@ -13,6 +14,7 @@ interface DevPlayer {
 
 export default function DevAuthClient({ players }: { players: DevPlayer[] }) {
   const router = useRouter();
+  const { refresh } = useAuth();
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,6 +37,8 @@ export default function DevAuthClient({ players }: { players: DevPlayer[] }) {
         throw new Error(payload?.error ?? "Failed to create dev session.");
       }
 
+      // The shared auth state was loaded before this sign-in (audit H2).
+      await refresh();
       router.push("/account");
       router.refresh();
     } catch (err) {

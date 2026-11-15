@@ -121,6 +121,8 @@ export async function getQfDiscoveryDocument(): Promise<QfOidcDiscoveryDocument>
   const issuer = getQfIssuerBaseUrl();
   const response = await fetch(`${issuer}/.well-known/openid-configuration`, {
     cache: "force-cache",
+    // A token refresh waits on this the first time; it must not hang (audit H2).
+    signal: AbortSignal.timeout(15000),
   });
 
   if (!response.ok) {
