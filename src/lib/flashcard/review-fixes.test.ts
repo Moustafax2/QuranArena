@@ -59,6 +59,7 @@ export async function runFlashcardReviewFixTests() {
   await runReviewPageLockTests();
   await runAlgorithmSwitchTests();
   await runGuestAlgorithmTests();
+  await runBrowseErrorTests();
 }
 
 async function runReviewUploadValidationTests() {
@@ -227,5 +228,21 @@ async function runGuestAlgorithmTests() {
       g.localStorage = saved.localStorage;
       globalThis.fetch = saved.fetch;
     }
+  });
+}
+
+async function runBrowseErrorTests() {
+  await runCase("Review #9: a failed Unlearn or Delete in the deck browser shows an error instead of hanging", () => {
+    const page = readFileSync("src/app/train/flashcards/browse/page.tsx", "utf8");
+    for (const [handler, call] of [["handleUnlearn", "unlearnFlashcard"], ["handleDelete", "deleteFlashcard"]]) {
+      const body = page.match(new RegExp(`const ${handler} = async \\(cardId: string\\) => \\{[\\s\\S]*?\\n {2}\\};`))?.[0] ?? "";
+      assert.match(body, new RegExp(`try \\{\\s*(?:\\w+ = )?await ${call}\\(cardId\\);\\s*\\} catch`), `${handler} doesn't catch a failed ${call}`);
+      assert.match(body, /catch \(error\) \{[\s\S]*reportActionError\(error,/, `${handler} doesn't report the failure`);
+      assert.match(page, /const reportActionError = [\s\S]*?setActionError\(/);
+      assert.match(body, /catch \(error\) \{[\s\S]*setPendingAction\(null\)/, `${handler} leaves the confirmation open after a failure`);
+    }
+    // The error is shown, and an expired session says so (M10).
+    assert.match(page, /\{actionError && \(\s*<p role="alert"/);
+    assert.match(page, /instanceof SessionExpiredError/);
   });
 }
