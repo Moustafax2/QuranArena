@@ -190,6 +190,49 @@ export async function runFlashcardPrivacyTests() {
     });
   });
 
+  await runCase("P3: an account with no preferences row gets the algorithm main kept only on this device, before sign-out removes that copy", async () => {
+    // Main's settings page saved an algorithm switch to the device only, so an
+    // account can have qalamspace_algorithm here and no preferences row at all.
+    // The preferences GET answers such an account with a JSON null.
+    const params = { ...DEFAULT_FSRS_PARAMETERS, request_retention: 0.8 };
+    const device = () => browserStorage({
+      qalamspace_algorithm: "sm2",
+      qalamspace_fsrs_params: JSON.stringify(params),
+    });
+
+    // A guest (401): nothing is sent and nothing is marked as uploaded.
+    const guestLocal = device();
+    const guestWrites: string[] = [];
+    await withBrowserGlobals(guestLocal, (async (input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method && init.method !== "GET") guestWrites.push(`${init.method} ${String(input)}`);
+      return Response.json({ error: "Authentication required." }, { status: 401 });
+    }) as typeof fetch, async () => {
+      const storage = await import("@/lib/storage/flashcard-storage-supabase");
+      await storage.migrateFromLocalStorage();
+    });
+    assert.deepEqual(guestWrites, [], "a guest's device settings were sent");
+    assert.equal(guestLocal.getItem("qalamspace_scheduler_prefs_synced"), null);
+
+    // A signed-in account without a row: the device's choice goes up once.
+    const server = new FakeServer();
+    assert.equal(server.preferences, null);
+    const local = device();
+    await withBrowserGlobals(local, (async (input: string | URL | Request, init?: RequestInit) => server.handle(String(input), init)) as typeof fetch, async () => {
+      const storage = await import("@/lib/storage/flashcard-storage-supabase");
+      const { forgetAccountSchedulerCopy } = await import("@/lib/privacy/browser-storage");
+      await storage.migrateFromLocalStorage();
+      assert.equal(server.preferences?.algorithm, "sm2", "the device-only algorithm never reached the account");
+      assert.equal((server.preferences?.fsrs_params as { request_retention?: number } | undefined)?.request_retention, 0.8);
+      assert.equal(local.getItem("qalamspace_scheduler_prefs_synced"), "true");
+
+      // Sign-out removes the device copy (P3); the account still has the choice.
+      forgetAccountSchedulerCopy();
+      const prefs = await storage.getPreferences();
+      assert.equal(prefs.algorithm, "sm2", "the algorithm choice was lost at sign-out");
+      assert.equal(storage.getFSRSParameters().request_retention, 0.8);
+    });
+  });
+
   await runCase("Consent: main's proxy refuses a signed-in flashcard write without a consent receipt, and asks guests for nothing", async () => {
     const { NextRequest } = await import("next/server");
     const proxyModule = loadWithMocks<{ proxy(request: InstanceType<typeof NextRequest>): Promise<Response> }>("../../proxy.ts", {

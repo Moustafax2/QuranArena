@@ -109,6 +109,9 @@ export async function runUserCountTests() {
       removeItem: (k: string) => void store.delete(k),
     };
     let prefsFail = true;
+    // The account has no preferences row until a save succeeds; then the GET
+    // returns what was saved, as the real route does.
+    let prefsRow: unknown = null;
     const sent = { cards: 0, reviews: 0, prefs: 0 };
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       const u = String(url);
@@ -117,8 +120,10 @@ export async function runUserCountTests() {
       if (u.startsWith("/api/flashcards/preferences") && init?.method === "PUT") {
         sent.prefs++;
         if (prefsFail) return Response.json({ error: "Could not save preferences." }, { status: 500 });
+        prefsRow = JSON.parse(String(init.body));
+        return Response.json({ ok: true });
       }
-      if (u.startsWith("/api/flashcards/preferences")) return Response.json(null);
+      if (u.startsWith("/api/flashcards/preferences")) return Response.json(prefsRow);
       return Response.json(init?.method ? { ok: true } : []);
     }) as typeof fetch;
     const quiet = console.error;

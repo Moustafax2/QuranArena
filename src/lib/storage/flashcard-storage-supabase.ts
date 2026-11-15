@@ -182,6 +182,14 @@ export class SessionExpiredError extends Error {
 }
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T | null> {
+  return (await apiFetchReply<T>(url, options))?.body ?? null;
+}
+
+/**
+ * apiFetch, but a reply whose body is JSON null (the preferences GET for an
+ * account without a row) stays apart from a guest's 401, which is null here.
+ */
+async function apiFetchReply<T>(url: string, options?: RequestInit): Promise<{ body: T } | null> {
   const res = await fetch(url, options);
   if (res.status === 401) {
     const body = (await res.json().catch(() => null)) as { code?: unknown } | null;
@@ -199,7 +207,7 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T | null
     const text = await res.text().catch(() => res.statusText);
     throw new Error(text);
   }
-  return res.json() as Promise<T>;
+  return { body: (await res.json()) as T };
 }
 
 // ── Date hydration ────────────────────────────────────────────────────────────
@@ -715,9 +723,12 @@ async function migrateDeviceSchedulerPreferences(): Promise<void> {
   if (!localStorage.getItem(ALGORITHM_KEY) && !localStorage.getItem(FSRS_PARAMS_KEY)) return;
   if (localStorage.getItem(DEVICE_PREFS_SYNCED_KEY) === "true") return;
   try {
-    const row = await apiFetch<Record<string, unknown> | null>("/api/flashcards/preferences");
-    if (row === null) return;
-    if (row.fsrs_params === null || typeof row.fsrs_params !== "object") await savePreferences(await getPreferences());
+    const reply = await apiFetchReply<Record<string, unknown> | null>("/api/flashcards/preferences");
+    if (reply === null) return; // a guest
+    // No row at all (a JSON null) is the case this exists for: main saved an
+    // algorithm switch to this device only, and sign-out removes that copy.
+    const row = reply.body;
+    if (!row || row.fsrs_params === null || typeof row.fsrs_params !== "object") await savePreferences(await getPreferences());
     localStorage.setItem(DEVICE_PREFS_SYNCED_KEY, "true");
   } catch (error) {
     // Often the only request that still carries the lapsed session's cookie
