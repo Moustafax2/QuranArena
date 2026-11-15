@@ -24,18 +24,18 @@ export async function POST(
   try {
     const invitation = await getInvitationById(id);
     if (!invitation) {
-      return NextResponse.json({ error: "Invitation not found." }, { status: 404 });
+      return NextResponse.json({ error: "Invitation not found." }, { status: 404, headers: cookieCarrier.headers });
     }
 
     if (invitation.invitee_qf_user_id !== session.user.sub) {
-      return NextResponse.json({ error: "Invitation not found." }, { status: 404 });
+      return NextResponse.json({ error: "Invitation not found." }, { status: 404, headers: cookieCarrier.headers });
     }
 
     if (invitation.status !== "pending") {
       await deleteInvitationById(id);
       return NextResponse.json(
         { error: "This invitation has already been handled." },
-        { status: 400 }
+        { status: 400, headers: cookieCarrier.headers }
       );
     }
 

@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     | null;
 
   if (!body?.chapterId || !body.verseNumber) {
-    return NextResponse.json({ error: "chapterId and verseNumber are required." }, { status: 400 });
+    return NextResponse.json({ error: "chapterId and verseNumber are required." }, { status: 400, headers: cookieCarrier.headers });
   }
 
   try {
@@ -70,7 +70,7 @@ export async function DELETE(request: NextRequest) {
 
   const body = (await request.json().catch(() => null)) as { bookmarkId?: string } | null;
   if (!body?.bookmarkId) {
-    return NextResponse.json({ error: "bookmarkId is required." }, { status: 400 });
+    return NextResponse.json({ error: "bookmarkId is required." }, { status: 400, headers: cookieCarrier.headers });
   }
 
   try {

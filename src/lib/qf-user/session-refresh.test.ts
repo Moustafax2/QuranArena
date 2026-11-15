@@ -329,6 +329,26 @@ export async function runSessionRefreshTests() {
     Date.now = saved.now;
   }
 
+  await check("H2: every reply of a route handler that reads the session carries its cookie headers, so a refresh's rotated tokens are never dropped", async () => {
+    const { execSync } = await import("node:child_process");
+    const files = execSync('git grep -l "const cookieCarrier = new NextResponse" -- src/app/api', { encoding: "utf8" }).trim().split("\n");
+    const missing: string[] = [];
+    for (const file of files) {
+      const source = readFileSync(file, "utf8").replace(/\r\n/g, "\n");
+      // Only inside a handler, after its carrier exists. Module-level 401
+      // helpers run only when there is no session, so no tokens were rotated.
+      let inHandler = false;
+      let start = 0;
+      for (const [i, line] of source.split("\n").entries()) {
+        if (/^export (async function|const)/.test(line)) inHandler = false;
+        if (/const cookieCarrier = new NextResponse\(\)/.test(line)) { inHandler = true; start = i; }
+        if (inHandler && i > start && /\{ status: \d+ \}/.test(line)) missing.push(`${file}:${i + 1}`);
+        if (/^}/.test(line)) inHandler = false;
+      }
+    }
+    assert.deepEqual(missing, [], "replies without the carrier's headers");
+  });
+
   await check("H2: the flashcard client treats a 503 from a flashcard route as a retryable error: never 'Sign in again', never a device write", async () => {
     const store = new Map<string, string>();
     const g = globalThis as unknown as Record<string, unknown>;

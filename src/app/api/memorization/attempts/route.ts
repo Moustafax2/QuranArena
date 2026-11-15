@@ -47,7 +47,7 @@ export async function GET(request: Request) {
   const cookieCarrier = new NextResponse();
   const playerId = await resolvePlayer(request, cookieCarrier);
   if (!playerId) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json({ error: "Authentication required." }, { status: 401, headers: cookieCarrier.headers });
   }
 
   const supabase = createAdminSupabaseClient();
@@ -68,7 +68,7 @@ export async function GET(request: Request) {
     const message = (error as { message?: unknown } | null)?.message;
     return NextResponse.json(
       { error: typeof message === "string" ? message : "Could not load memorization attempts." },
-      { status: 500 }
+      { status: 500, headers: cookieCarrier.headers }
     );
   }
 
@@ -85,12 +85,12 @@ export async function POST(request: Request) {
   const cookieCarrier = new NextResponse();
   const playerId = await resolvePlayer(request, cookieCarrier);
   if (!playerId) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json({ error: "Authentication required." }, { status: 401, headers: cookieCarrier.headers });
   }
 
   const body = (await request.json().catch(() => null)) as AttemptBody | null;
   if (!body?.client_attempt_id || !body.mode) {
-    return NextResponse.json({ error: "Invalid memorization attempt." }, { status: 400 });
+    return NextResponse.json({ error: "Invalid memorization attempt." }, { status: 400, headers: cookieCarrier.headers });
   }
 
   const supabase = createAdminSupabaseClient();
@@ -101,7 +101,7 @@ export async function POST(request: Request) {
     });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500, headers: cookieCarrier.headers });
   }
 
   return NextResponse.json({ ok: true }, { headers: cookieCarrier.headers });
@@ -111,12 +111,12 @@ export async function PUT(request: Request) {
   const cookieCarrier = new NextResponse();
   const playerId = await resolvePlayer(request, cookieCarrier);
   if (!playerId) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json({ error: "Authentication required." }, { status: 401, headers: cookieCarrier.headers });
   }
 
   const body = (await request.json().catch(() => null)) as AttemptBody[] | null;
   if (!Array.isArray(body)) {
-    return NextResponse.json({ error: "Expected an array of attempts." }, { status: 400 });
+    return NextResponse.json({ error: "Expected an array of attempts." }, { status: 400, headers: cookieCarrier.headers });
   }
 
   const attempts = body
@@ -135,7 +135,7 @@ export async function PUT(request: Request) {
     });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500, headers: cookieCarrier.headers });
   }
 
   return NextResponse.json({ ok: true }, { headers: cookieCarrier.headers });
@@ -145,7 +145,7 @@ export async function DELETE(request: Request) {
   const cookieCarrier = new NextResponse();
   const playerId = await resolvePlayer(request, cookieCarrier);
   if (!playerId) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json({ error: "Authentication required." }, { status: 401, headers: cookieCarrier.headers });
   }
 
   const supabase = createAdminSupabaseClient();
@@ -155,7 +155,7 @@ export async function DELETE(request: Request) {
     .eq("player_id", playerId);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500, headers: cookieCarrier.headers });
   }
 
   return NextResponse.json({ ok: true }, { headers: cookieCarrier.headers });

@@ -6,12 +6,12 @@ export async function POST(request: Request) {
   const cookieCarrier = new NextResponse();
   const playerId = await resolvePlayerId(request, cookieCarrier.cookies);
   if (!playerId) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json({ error: "Authentication required." }, { status: 401, headers: cookieCarrier.headers });
   }
 
   const body = (await request.json().catch(() => null)) as { room_code?: string } | null;
   if (!body?.room_code) {
-    return NextResponse.json({ error: "room_code is required." }, { status: 400 });
+    return NextResponse.json({ error: "room_code is required." }, { status: 400, headers: cookieCarrier.headers });
   }
 
   try {
