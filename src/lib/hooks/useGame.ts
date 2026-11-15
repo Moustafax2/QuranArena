@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { INITIAL_GAME_STATE, type GameState } from "@/lib/game/state-machine";
+import { localDeadline } from "@/lib/multiplayer/round-client";
 
 export function useGame(gameId: string | null, playerId: string | null, guestPlayerId?: string | null) {
   const [gameState, setGameState] = useState<GameState>(INITIAL_GAME_STATE);
@@ -28,7 +29,7 @@ export function useGame(gameId: string | null, playerId: string | null, guestPla
         if (!cancelled) setGameState({
           phase: data.game.ended_at ? 'game_over' : round?.ended_at ? 'round_result' : round ? 'round_active' : 'lobby',
           game_id: gameId,
-          current_round: round ? { round_id: round.id, round_number: round.round_number, total_rounds: data.game.total_rounds, prompt_verse_key: round.prompt_verse_key, prompt_text: round.prompt_text ?? '', options } : null,
+          current_round: round ? { round_id: round.id, round_number: round.round_number, total_rounds: data.game.total_rounds, prompt_verse_key: round.prompt_verse_key, prompt_text: round.prompt_text ?? '', options, deadline_ms: localDeadline(round.deadline_at, data.server_now, Date.now()) } : null,
           round_result: round?.ended_at ? { correct_verse_key: round.correct_verse_key, correct_text: round.correct_text ?? '', answers: data.answers.filter((a: { round_id: string }) => a.round_id === round.id), scores } : null,
           scores, winner_id: data.game.winner_id,
         });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { resolvePlayerId } from "@/lib/multiplayer/resolve-player";
+import { effectiveTimePerQuestion } from "@/lib/multiplayer/room-settings";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function GET(request: NextRequest) {
@@ -56,16 +57,24 @@ export async function GET(request: NextRequest) {
       .not("started_at", "is", null).order("round_number");
     if (roundsResult.error) throw roundsResult.error;
     // Explicit projection: never send future questions or active answer keys.
+    // deadline_at is when the server ends the round (audit H5); server_now lets
+    // the client count down without trusting its own clock.
+    const secondsPerQuestion = effectiveTimePerQuestion(room.settings);
+    const deadlineOf = (startedAt: string | null) => {
+      const started = startedAt ? Date.parse(startedAt) : NaN;
+      return Number.isFinite(started) ? new Date(started + secondsPerQuestion * 1000).toISOString() : null;
+    };
     const rounds = (roundsResult.data ?? []).map(r => ({ id: r.id, round_number: r.round_number,
       prompt_verse_key: r.prompt_verse_key, prompt_text: r.prompt_text, options: r.options,
       started_at: r.started_at, ended_at: r.ended_at,
+      deadline_at: deadlineOf(r.started_at),
       ...(r.ended_at || game.ended_at ? { correct_verse_key: r.correct_verse_key, correct_text: r.correct_text } : {}),
     }));
     const completed = rounds.filter(r => r.ended_at || game.ended_at).map(r => r.id);
     const answersResult = completed.length ? await admin.from("round_answers")
       .select("round_id, player_id, answer_verse_key, is_correct, points_awarded").in("round_id", completed).eq("player_id", playerId!) : { data: [], error: null };
     if (answersResult.error) throw answersResult.error;
-    return NextResponse.json({ room, membership: "active", game, players, rounds, answers: answersResult.data }, { headers });
+    return NextResponse.json({ room, membership: "active", game, players, rounds, answers: answersResult.data, server_now: new Date().toISOString() }, { headers });
   } catch {
     return NextResponse.json({ error: "Could not load multiplayer state." }, { status: 503, headers });
   }

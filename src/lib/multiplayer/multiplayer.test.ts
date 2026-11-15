@@ -9,6 +9,7 @@ import {
   toRoundRows,
 } from "../../../supabase/functions/_shared/multiplayer-rpc";
 import { effectiveTimePerQuestion } from "./room-settings";
+import { loadWithMocks } from "@/lib/flashcard/api-routes.test";
 
 // H1 / M3 / H5: the races themselves need real concurrent transactions, so
 // they run against the local stack in scripts/test-multiplayer-races-local.mjs
@@ -127,5 +128,88 @@ export async function runMultiplayerTests() {
     assert.doesNotMatch(sql, /between 1 and 50/);
     assert.match(sql, /'left_room'/);
     assert.doesNotMatch(sql, /winner_ids|v_top > 0/);
+  });
+
+  await runCase("H5: the state route sends each round's deadline and the server clock", async () => {
+    const roomId = "11111111-1111-4111-8111-111111111111";
+    const gameId = "22222222-2222-4222-8222-222222222222";
+    const started = "2026-10-27T10:00:00.000Z";
+    const tables: Record<string, Array<Record<string, unknown>>> = {
+      games: [{ id: gameId, room_id: roomId, total_rounds: 2, ended_at: null, winner_id: null, started_at: started }],
+      rooms: [{ id: roomId, code: "ABC123", host_id: "me", status: "in_progress", game_mode: "trivia", settings: { time_per_question: 45 } }],
+      room_players: [{ room_id: roomId, player_id: "me", status: "active", score: 0, joined_at: started, players: { display_name: "Me" } }],
+      game_rounds: [
+        { id: "r1", game_id: gameId, round_number: 1, started_at: started, ended_at: null, correct_verse_key: "k", correct_text: "t", prompt_verse_key: "p", prompt_text: "q", options: [] },
+        { id: "r2", game_id: gameId, round_number: 2, started_at: null, ended_at: null, correct_verse_key: "k2", correct_text: "t2", prompt_verse_key: "p2", prompt_text: "q2", options: [] },
+      ],
+      round_answers: [],
+    };
+    const from = (table: string) => {
+      const filters: Array<(row: Record<string, unknown>) => boolean> = [];
+      let single = false;
+      const builder = {
+        select: () => builder,
+        eq: (k: string, v: unknown) => { filters.push((r) => r[k] === v); return builder; },
+        not: (k: string, _op: string, v: unknown) => { filters.push((r) => r[k] !== v); return builder; },
+        in: (k: string, vs: unknown[]) => { filters.push((r) => vs.includes(r[k])); return builder; },
+        order: () => builder,
+        limit: () => builder,
+        maybeSingle: () => { single = true; return builder; },
+        then: (resolve: (value: unknown) => unknown) => {
+          const rows = tables[table].filter((r) => filters.every((f) => f(r)));
+          return Promise.resolve({ data: single ? rows[0] ?? null : rows, error: null }).then(resolve);
+        },
+      };
+      return builder;
+    };
+    const route = loadWithMocks<{ GET: (request: Request) => Promise<Response> }>(path.join(root, "src/app/api/multiplayer/state/route.ts"), {
+      "@/lib/supabase/admin": { createAdminSupabaseClient: () => ({ from }) },
+      "@/lib/multiplayer/resolve-player": { resolvePlayerId: async () => "me" },
+    });
+    const { NextRequest } = await import("next/server");
+    const before = Date.now();
+    const data = await (await route.GET(new NextRequest(`https://app.test/api/multiplayer/state?game=${gameId}`))).json();
+    assert.deepEqual(data.rounds.map((r: { id: string }) => r.id), ["r1"]);
+    assert.equal(data.rounds[0].deadline_at, "2026-10-27T10:00:45.000Z", "the round has no deadline");
+    assert.ok(Date.parse(data.server_now) >= before - 1000, "no server clock in the response");
+    assert.equal("correct_verse_key" in data.rounds[0], false, "the open round's answer key leaked");
+  });
+
+  await runCase("H5: the countdown follows the server's deadline, not the device clock", async () => {
+    const { localDeadline, secondsLeft } = await import("./round-client");
+    // The device clock is 10 minutes fast; 20 s remain on the server.
+    const deviceNow = Date.parse("2026-10-27T10:10:00.000Z");
+    const deadline = localDeadline("2026-10-27T10:00:30.000Z", "2026-10-27T10:00:10.000Z", deviceNow);
+    assert.equal(deadline, deviceNow + 20_000);
+    assert.equal(secondsLeft(deadline, deviceNow), 20);
+    assert.equal(secondsLeft(deadline, deviceNow + 19_001), 1);
+    assert.equal(secondsLeft(deadline, deviceNow + 25_000), 0);
+    assert.equal(localDeadline(null, "2026-10-27T10:00:10.000Z", deviceNow), null);
+    assert.equal(secondsLeft(null, deviceNow), null);
+  });
+
+  await runCase("H5: a failed answer can be retried; only an answer the server already has stays locked", async () => {
+    const { answerStateAfterSubmit } = await import("./round-client");
+    assert.deepEqual(answerStateAfterSubmit({ ok: true }, "1:2"), { answered: true, selected: "1:2", error: null });
+    assert.deepEqual(
+      answerStateAfterSubmit({ ok: false, error: "Network error — answer may not have been recorded" }, "1:2"),
+      { answered: false, selected: null, error: "Network error — answer may not have been recorded" },
+      "a failed submission locked the player out",
+    );
+    assert.equal(answerStateAfterSubmit({ ok: false, error: "Failed to submit answer." }, "1:2").answered, false);
+    assert.equal(answerStateAfterSubmit({ ok: false }, "1:2").error, "Failed to submit answer");
+    // A retry after a lost response: the first try did reach the server.
+    assert.deepEqual(answerStateAfterSubmit({ ok: false, error: "Already answered this round" }, "1:2"), { answered: true, selected: "1:2", error: null });
+
+    const page = code("src/app/play/[roomId]/page.tsx");
+    const handleSelect = page.slice(page.indexOf("async function handleSelect"), page.indexOf("async function handleBuzzer"));
+    assert.ok(handleSelect.includes("answerStateAfterSubmit("), "handleSelect does not use answerStateAfterSubmit");
+    assert.ok(handleSelect.includes("setAnswered(next.answered)"), "a failed answer keeps the options locked");
+    assert.ok(page.includes("secondsLeft("), "the game screen shows no countdown");
+    assert.ok(page.includes("disabled={answered || timeUp}"), "options stay clickable after the time is up");
+    assert.ok(
+      code("src/lib/hooks/useGame.ts").includes("deadline_ms: localDeadline(round.deadline_at, data.server_now, Date.now())"),
+      "the poll does not pass the deadline on",
+    );
   });
 }
