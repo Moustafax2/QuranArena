@@ -54,6 +54,7 @@ export async function runFlashcardReviewFixTests() {
   });
 
   await runReviewUploadValidationTests();
+  await runUnknownWordTests();
 }
 
 async function runReviewUploadValidationTests() {
@@ -115,5 +116,33 @@ async function runReviewUploadValidationTests() {
       g.localStorage = saved.localStorage;
       globalThis.fetch = saved.fetch;
     }
+  });
+}
+
+async function runUnknownWordTests() {
+  await runCase("Review #3: a card whose word is not in the word list is skipped and reported, not a failed import", async () => {
+    const known = new Set(["w-known"]);
+    const db = fakeSupabase((op) => {
+      if (op.table !== "lexical_entries") return {};
+      const words = (op.filters.find(([kind]) => kind === "in")?.[2] ?? []) as string[];
+      return { data: words.filter((w) => known.has(w)).map((word_id) => ({ word_id })) };
+    });
+    const route = loadWithMocks<{ PUT: Handler }>("../../app/api/flashcards/cards/route.ts", {
+      "@/lib/qf-user/session": { getUsableSession: async () => ({ player_id: "p1" }) },
+      "@/lib/supabase/admin": { createAdminSupabaseClient: () => db.client },
+    });
+    const card = (id: string, word: string) => ({
+      id, word_id: word, status: "IN_BANK", created_at: "2026-10-01T00:00:00.000Z",
+      fsrs_state: { due: "2026-10-01T00:00:00.000Z", state: 0 },
+    });
+    // user_flashcards.word_id references lexical_entries, so an unknown word
+    // (an id from an older word list) would fail the whole insert.
+    const response = await route.PUT(jsonRequest("PUT", [card("a", "w-known"), card("b", "w-renamed"), card("c", "w-known-2")]));
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true, skipped: 2, skipped_indexes: [1, 2] });
+    const written = db.ops.filter((op) => op.table === "user_flashcards" && op.action === "upsert").flatMap((op) => (op.payload as Row[]).map((r) => r.word_id));
+    assert.deepEqual([...new Set(written)], ["w-known"]);
+    const sizes = inListSizes(db.ops, "lexical_entries");
+    assert.ok(sizes.length > 0 && Math.max(...sizes) <= 100);
   });
 }

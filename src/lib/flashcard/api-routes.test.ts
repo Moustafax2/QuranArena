@@ -56,7 +56,14 @@ export function fakeSupabase(respond: (op: RecordedOp) => Result = () => ({ data
         single() { return builder; },
         then(resolve: (value: Result) => unknown, reject?: (reason: unknown) => unknown) {
           ops.push(op);
-          return Promise.resolve({ data: null, error: null, ...respond(op) }).then(resolve, reject);
+          const result = { data: null, error: null, ...respond(op) } as Result;
+          // Unless a test says otherwise, every word looked up is in the word
+          // list (the cards PUT checks lexical_entries before it writes).
+          if (op.table === "lexical_entries" && result.data == null) {
+            const words = (op.filters.find(([kind, column]) => kind === "in" && column === "word_id")?.[2] ?? []) as string[];
+            result.data = words.map((word_id) => ({ word_id }));
+          }
+          return Promise.resolve(result).then(resolve, reject);
         },
       };
       return builder;

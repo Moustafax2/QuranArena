@@ -420,7 +420,7 @@ export default function FlashcardsHubPage() {
             <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0" />
             <span>
               {unsyncedCards === 1 ? "1 flashcard" : `${unsyncedCards} flashcards`} saved on this device earlier could not be
-              added to your account, because their saved data is damaged. They are kept on this device and are not in your deck.
+              added to your account, because their saved data is damaged or their word is no longer in the word list. They are kept on this device and are not in your deck.
             </span>
           </div>
         )}

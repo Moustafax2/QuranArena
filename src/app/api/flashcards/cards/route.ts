@@ -4,7 +4,7 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { authRequiredBody } from "@/lib/flashcard/auth-required";
 import type { Database } from "@/lib/supabase/types";
 import { clientErrorMessage } from "@/lib/public-error";
-import { fetchAllPages } from "@/lib/supabase/paging";
+import { fetchAllPages, fetchInChunks } from "@/lib/supabase/paging";
 import { isStorableCardBody } from "@/lib/api-validation";
 
 type CardInsert = Database["public"]["Tables"]["user_flashcards"]["Insert"];
@@ -113,15 +113,33 @@ export async function PUT(request: Request) {
   // this is also the sign-in migration, which a single corrupt local card
   // would otherwise block on every load. The reply says which ones (their
   // positions in the body), so the client can keep them (A4 review #5).
-  const cards = body.filter(isCardBody);
-  const skippedIndexes = body.flatMap((card, index) => (isCardBody(card) ? [] : [index]));
+  const valid = body.flatMap((card, index) => (isCardBody(card) ? [{ card, index }] : []));
+
+  const supabase = createAdminSupabaseClient();
+
+  // user_flashcards.word_id references lexical_entries, so a card for a word
+  // the word list doesn't have (an id from an older list) would fail the
+  // whole insert, on every retry. Such cards are skipped and reported too.
+  let knownWords = new Set<string>();
+  if (valid.length > 0) {
+    try {
+      const rows = await fetchInChunks<{ word_id: string }>([...new Set(valid.map(({ card }) => card.word_id))], (chunk) =>
+        supabase.from("lexical_entries").select("word_id").in("word_id", chunk)
+      );
+      knownWords = new Set(rows.map((row) => row.word_id));
+    } catch (error) {
+      return NextResponse.json({ error: clientErrorMessage(error, "Could not import flashcards.") }, { status: 500, headers: cookieCarrier.headers });
+    }
+  }
+  const kept = valid.filter(({ card }) => knownWords.has(card.word_id));
+  const cards = kept.map(({ card }) => card);
+  const keptIndexes = new Set(kept.map(({ index }) => index));
+  const skippedIndexes = body.flatMap((_card, index) => (keptIndexes.has(index) ? [] : [index]));
   const skipped = skippedIndexes.length;
   const reply = skipped ? { ok: true, skipped, skipped_indexes: skippedIndexes } : { ok: true };
   if (cards.length === 0) {
     return NextResponse.json(reply, { headers: cookieCarrier.headers });
   }
-
-  const supabase = createAdminSupabaseClient();
 
   // 1. Insert the words that aren't in the deck yet, keeping the client id.
   const inserted = await supabase
