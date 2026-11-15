@@ -94,6 +94,19 @@ Prove each verdict with a reproduction test on the new branch, not just by readi
   - **Lint:** fix the errors with no `eslint-disable`, no try/finally tricks, and no behaviour changes.
 - **If a fix can't be applied without a non-Part-1 change, STOP that bug and report it.** Don't silently widen the scope.
 
+## Phase 4 coordinator decisions (2026-11-15, after the Phase 3 triage in `docs/major-bug-triage.md`)
+Main fixed none of the open items. All of M13, M1, M4 (non-flashcard), H6 (accounts), H2, M7, H1, M3, H5 and Lint are still present. Each agent follows these:
+1. **No new dependencies.** PGlite is NOT added. SQL-level proofs (H1, M3, H5, M13) run against the LOCAL Supabase stack as committed scripts outside `npm test` (for example `scripts/test-*-local.mjs`), documented in the triage or the report. Pure logic tests stay in `npm test`.
+2. **Migration 014 is reduced to Part-1.** Keep only what H1, M3 and H5 need. Strip L6 (tie / no-points-no-win), L19 (lobby rejoin), M2 (the 50-round cap) and reply-shape changes, wherever they can be separated. A piece that can't be separated without breaking a Part-1 fix stays, gets its own note in the commit, and is listed in the report. The file stays named `014_multiplayer_atomic_transitions.sql`; its header says it is a reduced form of the source branch's 014.
+3. **Migration 015 is skipped** (its lead-in needs M11's client poll, which is not Part-1), as is 018 (C-R4).
+4. **H2 is fixed per process only**, as on the source branch. Port the listed commits; keep `useAuth`'s `sessionExpired` (the D1 fix). Skip `5fb44b1`, because it changes main's consent receipts. The multi-instance gap is reported, not fixed.
+5. **The Lint `*.cjs` override** in `eslint.config.mjs` (CommonJS files may use `require`) is allowed: it's a file-type config, not a silenced error. No `eslint-disable` comments.
+6. **M13:** `supabase/config.toml` is not changed. Turning off hosted sign-up stays a deploy step for the user.
+7. **M1:** port `scripts/seed-lexical.ts` and its helper, but do NOT add any npm script that loads `.env.local` (it would target the hosted DB). The documented local command is `npx tsx --env-file=.env.development.local scripts/seed-lexical.ts`.
+8. **The H3 leftovers** (flagged words and unsynced cards are lost when main's PrivacyGate wipes device data after a lapse) can't be fixed without changing PrivacyGate or adding server columns. They are reported to the user, not fixed.
+9. **Source commit messages carry `Co-Authored-By` lines.** Never reuse them (no cherry-pick `-x`, no copied messages); write fresh messages without attribution.
+10. **The order** is M13 → M1 → M4 → H6 → H2 → M7 → H1+M3+H5 → Lint, one agent each. The coordinator verifies the gates between agents. The reproduction tests from Phase 3 are in the coordinator's scratchpad `triage-repros/`; each agent moves its bug's reproduction into the repo, test-first.
+
 ## Phase 5: verify the whole system (agents V2 and R1)
 1. **V2:** all gates, plus the heavy flashcard suite, plus a full local browser pass:
    - flashcards, as a guest and as an account;
