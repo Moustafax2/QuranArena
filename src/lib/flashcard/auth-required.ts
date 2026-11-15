@@ -10,7 +10,8 @@ export const SESSION_EXPIRED_CODE = "SESSION_EXPIRED";
 // The QF session cookie (see qf-user/session.ts; proxy.ts reads it by name too).
 const SESSION_COOKIE = "qf_session";
 
-function carriesSessionCookie(request: Request): boolean {
+/** The request carries a non-empty QF session cookie (usable or not). */
+export function carriesSessionCookie(request: Request): boolean {
   const header = request.headers.get("cookie") ?? "";
   return header.split(";").some((part) => {
     const [name, ...value] = part.trim().split("=");

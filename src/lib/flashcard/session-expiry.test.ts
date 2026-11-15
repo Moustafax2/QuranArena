@@ -71,3 +71,61 @@ export async function runSessionExpiryTests() {
     assert.equal(store.get("qalamspace_migrated_to_supabase"), undefined);
   });
 }
+
+export async function runSessionRouteExpiryTests() {
+  const { loadWithMocks } = await import("@/lib/flashcard/api-routes.test");
+  type SessionRoute = { GET(request: Request): Promise<Response> };
+  const load = (getUsableSession: () => Promise<unknown>, cleared: string[]) =>
+    loadWithMocks<SessionRoute>("../../app/api/auth/qf/session/route.ts", {
+      "@/lib/qf-user/session": {
+        getUsableSession,
+        writeSessionCookie: async () => {},
+        clearQfCookies: () => void cleared.push("cleared"),
+      },
+      "@/lib/qf-user/user-profile": { getPlayerById: async () => null },
+    });
+  const request = (cookie?: string) =>
+    new Request("https://app.test/api/auth/qf/session", cookie ? { headers: { cookie } } : undefined);
+  const errors = console.error;
+
+  await runCase("D1: the session route says when a sign-in cookie it had to clear was unusable, and nothing else changes", async () => {
+    console.error = () => {};
+    try {
+      for (const [path, getUsableSession] of [
+        ["null", async () => null],
+        ["catch", async () => { throw new Error("Could not verify account session."); }],
+      ] as const) {
+        const cleared: string[] = [];
+        const route = load(getUsableSession, cleared);
+        const expired = await route.GET(request("theme=dark; qf_session=stale-value"));
+        assert.deepEqual(await expired.json(), { isAuthenticated: false, user: null, player: null, sessionExpired: true }, `${path} path`);
+        assert.deepEqual(cleared, ["cleared"], `the ${path} path no longer clears the cookies`);
+
+        // A guest (no cookie, or an already cleared one) gets main's reply unchanged.
+        for (const guest of [request(), request("qf_session=; theme=dark")]) {
+          const cookiesCleared: string[] = [];
+          const reply = await load(getUsableSession, cookiesCleared).GET(guest);
+          assert.deepEqual(await reply.json(), { isAuthenticated: false, user: null, player: null }, `${path} path, guest`);
+          assert.deepEqual(cookiesCleared, ["cleared"]);
+        }
+      }
+    } finally {
+      console.error = errors;
+    }
+  });
+}
+
+export async function runUseAuthExpiryTests() {
+  const { readFileSync } = await import("node:fs");
+  await runCase("D1: useAuth exposes sessionExpired and records it for the page view; a sign-in clears it", () => {
+    const source = readFileSync("src/lib/hooks/useAuth.ts", "utf8");
+    assert.match(source, /sessionExpired: boolean;/, "AuthState has no sessionExpired");
+    assert.match(source, /sessionExpired\?: boolean;/, "the session response type has no sessionExpired");
+    assert.match(source, /if \(parsed\.isAuthenticated\) clearSessionExpired\(\);\s*else if \(parsed\.sessionExpired === true\) noteSessionExpired\(\);/);
+    assert.match(source, /const payload = \{ \.\.\.parsed, sessionExpired: isSessionExpired\(\) \};/);
+    // Each state update carries it; nothing else about the hook changes.
+    assert.equal(source.match(/sessionExpired: payload\.sessionExpired,/g)?.length, 2, "hydrate and refresh don't both pass it on");
+    assert.match(source, /window\.location\.href = "\/api\/auth\/qf\/logout";/);
+    assert.match(source, /fetch\("\/api\/multiplayer\/guest-token"/);
+  });
+}

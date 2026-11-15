@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Database } from "@/lib/supabase/types";
 import { forgetAccountSchedulerCopy } from "@/lib/privacy/browser-storage";
+import { clearSessionExpired, isSessionExpired, noteSessionExpired } from "@/lib/flashcard/session-expiry";
 
 type Player = Database["public"]["Tables"]["players"]["Row"];
 
@@ -19,6 +20,8 @@ interface AuthState {
   isAuthenticated: boolean;
   bookmarkSync: boolean;
   isGuest: boolean;
+  /** This page view found a sign-in that could no longer be used (M10, Phase 2 D1). */
+  sessionExpired: boolean;
   loading: boolean;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -29,6 +32,7 @@ interface SessionResponse {
   isAuthenticated: boolean;
   user: AuthUser | null;
   player: Player | null;
+  sessionExpired?: boolean;
 }
 
 const GUEST_STORAGE_KEY = "qalamspace_guest_player";
@@ -40,6 +44,7 @@ export function useAuth(): AuthState {
     isAuthenticated: false,
     bookmarkSync: false,
     isGuest: false,
+    sessionExpired: false,
     loading: true,
   });
 
@@ -47,7 +52,12 @@ export function useAuth(): AuthState {
     try {
       const response = await fetch("/api/auth/qf/session", { cache: "no-store" });
       if (!response.ok) throw new Error("Session unavailable.");
-      const payload = (await response.json()) as SessionResponse;
+      const parsed = (await response.json()) as SessionResponse;
+      // The route signs out a sign-in it can't use and says so; another hook
+      // on the page may have seen that first, so the page view keeps it.
+      if (parsed.isAuthenticated) clearSessionExpired();
+      else if (parsed.sessionExpired === true) noteSessionExpired();
+      const payload = { ...parsed, sessionExpired: isSessionExpired() };
 
       if (!payload.isAuthenticated && typeof window !== "undefined") {
         const guestResponse = await fetch("/api/multiplayer/guest-token", { cache: "no-store" });
@@ -66,6 +76,7 @@ export function useAuth(): AuthState {
         user: null,
         isAuthenticated: false,
         isGuest: false,
+        sessionExpired: isSessionExpired(),
       };
     }
   }, []);
@@ -83,6 +94,7 @@ export function useAuth(): AuthState {
         isAuthenticated: payload.isAuthenticated,
         bookmarkSync: "bookmarkSync" in payload && payload.bookmarkSync === true,
         isGuest: payload.isGuest,
+        sessionExpired: payload.sessionExpired,
         loading: false,
       });
     }
@@ -102,6 +114,7 @@ export function useAuth(): AuthState {
       isAuthenticated: payload.isAuthenticated,
       bookmarkSync: "bookmarkSync" in payload && payload.bookmarkSync === true,
       isGuest: payload.isGuest,
+      sessionExpired: payload.sessionExpired,
       loading: false,
     });
   }, [loadSession]);
