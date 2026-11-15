@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { Database } from "@/lib/supabase/types";
+import { forgetAccountSchedulerCopy } from "@/lib/privacy/browser-storage";
 
 type Player = Database["public"]["Tables"]["players"]["Row"];
 
@@ -106,6 +107,13 @@ export function useAuth(): AuthState {
   }, [loadSession]);
 
   const logout = useCallback(async () => {
+    // The device copy of the account's flashcard scheduler settings stays
+    // with the account, not with this browser.
+    try {
+      forgetAccountSchedulerCopy();
+    } catch {
+      // Storage unavailable: nothing was stored.
+    }
     window.location.href = "/api/auth/qf/logout";
   }, []);
 

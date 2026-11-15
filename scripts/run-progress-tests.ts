@@ -11,6 +11,7 @@ import { runQueueVerificationTests } from "../src/lib/flashcard/verification/que
 import { runFastSimulations } from "./flashcard-sim";
 import { runUserCountTests } from "../src/lib/flashcard/user-counts.test";
 import { runFlashcardDataTests } from "../src/lib/flashcard/data-fixes.test";
+import { runFlashcardPrivacyTests } from "../src/lib/flashcard/privacy.test";
 import { runFlagWordingTests, runReviewActionTests, runSettingsResetTests, runShortcutTests, runStatsTests } from "../src/lib/flashcard/stats.test";
 
 async function main() {
@@ -38,6 +39,7 @@ async function main() {
     await runFastSimulations();
     await runUserCountTests();
     await runFlashcardDataTests();
+    await runFlashcardPrivacyTests();
     console.log("All progress helper tests passed.");
   } catch (error) {
     console.error("Progress helper tests failed.");
