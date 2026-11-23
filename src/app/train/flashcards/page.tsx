@@ -16,9 +16,8 @@ import {
   FolderOpen,
   ChevronLeft,
 } from "lucide-react";
-import { getFlashcards, getReviewLog, migrateFromLocalStorage } from "@/lib/storage/flashcard-storage-supabase";
-import { getDueCardsCount, getNewCardsCount } from "@/lib/flashcard/session-manager";
-import type { ReviewLogEntry } from "@/lib/types/flashcard";
+import { getUnsyncedFlashcardCount, migrateFromLocalStorage, SessionExpiredError } from "@/lib/storage/flashcard-storage-supabase";
+import { describeStudyLoad, getHubSummary } from "@/lib/flashcard/session-manager";
 import { useAuth } from "@/lib/hooks/useAuth";
 
 function HowItWorksModal({ onClose }: { onClose: () => void }) {
@@ -57,20 +56,20 @@ function HowItWorksModal({ onClose }: { onClose: () => void }) {
             </p>
             <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
               <div className="rounded-lg bg-red-500/10 p-3">
-                <div className="mb-1 font-bold text-red-400">Again</div>
-                <div className="text-gray-400">Completely forgot — you&apos;ll see it again soon in this session</div>
+                <div className="mb-1 font-bold text-red-400">Forgot</div>
+                <div className="text-gray-400">Didn&apos;t remember it — it comes back in a few minutes to relearn</div>
               </div>
               <div className="rounded-lg bg-orange-500/10 p-3">
                 <div className="mb-1 font-bold text-orange-400">Hard</div>
-                <div className="text-gray-400">Recalled with difficulty — shorter gap before next review</div>
+                <div className="text-gray-400">Recalled with difficulty — a shorter gap than Got it</div>
               </div>
               <div className="rounded-lg bg-emerald-500/10 p-3">
-                <div className="mb-1 font-bold text-emerald-400">Good</div>
-                <div className="text-gray-400">Got it — normal interval, you&apos;ll see it in a few days</div>
+                <div className="mb-1 font-bold text-emerald-400">Got it</div>
+                <div className="text-gray-400">Remembered — the normal next step: minutes apart while a word is new, then days</div>
               </div>
               <div className="rounded-lg bg-blue-500/10 p-3">
                 <div className="mb-1 font-bold text-blue-400">Easy</div>
-                <div className="text-gray-400">Instant recall — long gap, you clearly know this one</div>
+                <div className="text-gray-400">Instant recall — the longest gap; a new word skips straight to days</div>
               </div>
             </div>
           </div>
@@ -172,7 +171,8 @@ function HowItWorksModal({ onClose }: { onClose: () => void }) {
               The primary translations shown on the cards are sourced from the{" "}
               <strong className="text-white">Quranic Corpus</strong> — linguistic word-level annotations
               that may occasionally be oversimplified or miss important nuance. If something looks wrong,
-              please flag it so it can be corrected for everyone.
+              flag it during review to mark it for yourself (flags are saved on this device only), and
+              email support@quranarena.ca so it can be corrected for everyone.
             </p>
             <p className="leading-relaxed text-gray-400">
               For the most reliable understanding of a word, treat{" "}
@@ -271,7 +271,7 @@ function SRExplainerModal({ onClose }: { onClose: () => void }) {
             <p className="mb-2 font-semibold text-white">How ratings work</p>
             <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
               <div className="rounded-lg bg-red-500/10 p-3">
-                <div className="mb-1 font-bold text-red-400">Again</div>
+                <div className="mb-1 font-bold text-red-400">Forgot</div>
                 <div className="text-gray-400">Complete forget — card is re-shown this session and scheduled soon</div>
               </div>
               <div className="rounded-lg bg-orange-500/10 p-3">
@@ -279,7 +279,7 @@ function SRExplainerModal({ onClose }: { onClose: () => void }) {
                 <div className="text-gray-400">Recalled with difficulty — short interval, easiness decreases</div>
               </div>
               <div className="rounded-lg bg-emerald-500/10 p-3">
-                <div className="mb-1 font-bold text-emerald-400">Good</div>
+                <div className="mb-1 font-bold text-emerald-400">Got it</div>
                 <div className="text-gray-400">Correct recall — interval grows normally</div>
               </div>
               <div className="rounded-lg bg-blue-500/10 p-3">
@@ -299,7 +299,7 @@ function SRExplainerModal({ onClose }: { onClose: () => void }) {
                 <em>DSR model</em> (Difficulty, Stability, Retrievability). Significantly outperforms SM-2 in
                 predicting the optimal review time.{" "}
                 <a
-                  href="https://github.com/open-spaced-repetition/fsrs4anki"
+                  href="https://github.com/open-spaced-repetition/ts-fsrs"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-emerald-400 underline"
@@ -308,17 +308,18 @@ function SRExplainerModal({ onClose }: { onClose: () => void }) {
                 </a>
               </div>
               <div>
-                <span className="font-semibold text-amber-400">SM-2</span>{" "}
-                <span className="text-gray-500">(legacy)</span> — SuperMemo 2 by Piotr Wozniak (1987). The
-                original spaced repetition algorithm, popularized by Anki. Uses a fixed easiness factor per
-                card to determine intervals. Simpler but less accurate than FSRS.{" "}
+                <span className="font-semibold text-amber-400">Classic</span>{" "}
+                <span className="text-gray-500">(SM-2 based)</span> — built on SuperMemo 2 by Piotr Wozniak
+                (1987). New and forgotten words get a few short practice steps; after that each word&apos;s
+                gap grows by its own ease factor, which your answers nudge up or down. Simpler but less
+                accurate than FSRS.{" "}
                 <a
-                  href="https://github.com/ankitects/anki"
+                  href="https://www.supermemo.com/en/blog/application-of-a-computer-to-improve-the-results-obtained-in-working-with-the-supermemo-method"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-amber-400 underline"
                 >
-                  Anki (GitHub)
+                  SM-2 (SuperMemo)
                 </a>
               </div>
             </div>
@@ -336,38 +337,8 @@ function SRExplainerModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function calculateStreak(reviews: ReviewLogEntry[]): number {
-  if (reviews.length === 0) return 0;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const reviewedDays = new Set(
-    reviews.map((r) => {
-      const d = new Date(r.timestamp);
-      d.setHours(0, 0, 0, 0);
-      return d.getTime();
-    })
-  );
-
-  // Check if reviewed today or yesterday (grace: streak survives until end of next day)
-  let streak = 0;
-  let cursor = today.getTime();
-
-  // Allow streak if today has reviews, or if yesterday had reviews (today not done yet)
-  if (!reviewedDays.has(cursor)) {
-    cursor -= 86400000; // check yesterday
-    if (!reviewedDays.has(cursor)) return 0;
-  }
-
-  while (reviewedDays.has(cursor)) {
-    streak++;
-    cursor -= 86400000;
-  }
-  return streak;
-}
-
 export default function FlashcardsHubPage() {
-  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { isAuthenticated, loading: authLoading, sessionExpired } = useAuth();
   const [dueCount, setDueCount] = useState(0);
   const [newCount, setNewCount] = useState(0);
   const [totalCards, setTotalCards] = useState(0);
@@ -375,32 +346,47 @@ export default function FlashcardsHubPage() {
   const [loading, setLoading] = useState(true);
   const [showSRExplainer, setShowSRExplainer] = useState(false);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
+  const [loadError, setLoadError] = useState<{ message: string; signIn: boolean } | null>(null);
+  const [unsyncedCards, setUnsyncedCards] = useState(0);
 
   async function loadStats() {
-    const [due, newCards, cards, reviews] = await Promise.all([
-      getDueCardsCount(),
-      getNewCardsCount(),
-      getFlashcards(),
-      getReviewLog(),
-    ]);
-    setDueCount(due);
-    setNewCount(newCards);
-    setTotalCards(cards.length);
-    setStreak(calculateStreak(reviews));
+    // One load of each (audit L18).
+    const summary = await getHubSummary();
+    setDueCount(summary.due);
+    setNewCount(summary.newCards);
+    setTotalCards(summary.totalCards);
+    setStreak(summary.streak);
     setLoading(false);
   }
 
   useEffect(() => {
+    // Wait for the session: a lapsed sign-in is reported only to the first
+    // requests of the page, and then nothing may be read or written as a
+    // guest's (Phase 2 D1). The next page load is a plain guest's.
+    if (authLoading) return;
     async function initializeAndLoad() {
-      await migrateFromLocalStorage();
-      await loadStats();
+      try {
+        if (sessionExpired) throw new SessionExpiredError();
+        await migrateFromLocalStorage();
+        setUnsyncedCards(getUnsyncedFlashcardCount());
+        await loadStats();
+      } catch (error) {
+        console.error("Failed to load flashcards:", error);
+        setLoadError(
+          error instanceof SessionExpiredError
+            ? { message: error.message, signIn: true }
+            : { message: "Your flashcards could not be loaded. Please try again.", signIn: false }
+        );
+        setLoading(false);
+        return;
+      }
       const seen = localStorage.getItem("flashcard_how_it_works_seen");
       if (!seen) {
         setShowHowItWorks(true);
       }
     }
     initializeAndLoad();
-  }, []);
+  }, [authLoading, sessionExpired]);
 
   if (loading) {
     return (
@@ -414,13 +400,36 @@ export default function FlashcardsHubPage() {
   }
 
   const hasCards = totalCards > 0;
+  const studyLoad = describeStudyLoad({ due: dueCount, newCards: newCount });
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-950 to-gray-900 px-4 py-12">
       {showSRExplainer && <SRExplainerModal onClose={() => setShowSRExplainer(false)} />}
       {showHowItWorks && <HowItWorksModal onClose={() => { localStorage.setItem("flashcard_how_it_works_seen", "1"); setShowHowItWorks(false); }} />}
       <div className="mx-auto max-w-4xl">
-        {!authLoading && !isAuthenticated && (
+        {loadError && (
+          <div role="alert" className="mb-6 flex items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0" />
+            <span>
+              {loadError.message}{" "}
+              {loadError.signIn && (
+                <Link href="/login?next=/train/flashcards" className="underline hover:text-red-200">
+                  Sign in
+                </Link>
+              )}
+            </span>
+          </div>
+        )}
+        {unsyncedCards > 0 && (
+          <div role="status" className="mb-6 flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+            <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0" />
+            <span>
+              {unsyncedCards === 1 ? "1 flashcard" : `${unsyncedCards} flashcards`} saved on this device earlier could not be
+              added to your account, because their saved data is damaged or their word is no longer in the word list. They are kept on this device and are not in your deck.
+            </span>
+          </div>
+        )}
+        {!loadError && !authLoading && !isAuthenticated && (
           <div className="mb-6 flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
             <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0" />
             <span>
@@ -469,10 +478,10 @@ export default function FlashcardsHubPage() {
                     Review Session
                   </div>
                   <div className="mb-4 text-4xl font-bold text-white">
-                    {dueCount} cards due
+                    {studyLoad.headline}
                   </div>
                   <div className="text-sm text-emerald-100">
-                    Start your review now
+                    {studyLoad.detail}
                   </div>
                 </div>
               </Link>

@@ -1,20 +1,26 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { PartyPopper, Flag, Trash2 } from "lucide-react";
 import { FlashcardReview } from "@/components/flashcard/FlashcardReview";
-import type { FlashcardSession, Rating, FSRSCard } from "@/lib/types/flashcard";
+import type { FlashcardSession, LexicalEntry, Rating, UserFlashcard } from "@/lib/types/flashcard";
 import {
   createReviewSession,
   reviewCard,
   undoReview,
+  removeCurrentCard,
   getCurrentCard,
   isSessionComplete,
   getSessionProgress,
+  sessionCardKey,
+  wordForCard,
 } from "@/lib/flashcard/session-manager";
 import { getWordById } from "@/lib/corpus/lexical-db";
-import { deleteFlashcard } from "@/lib/storage/flashcard-storage-supabase";
+import { deleteFlashcard, getFSRSParameters, SessionExpiredError } from "@/lib/storage/flashcard-storage-supabase";
+import { formatInterval, previewIntervals } from "@/lib/flashcard/intervals";
+import { isUndoShortcut } from "@/lib/flashcard/shortcuts";
+import { runExclusive } from "@/lib/flashcard/review-actions";
 
 // ── Flagged words (localStorage) ─────────────────────────────────
 const FLAGGED_KEY = "qalamspace_flagged_words";
@@ -33,11 +39,14 @@ function saveFlaggedWords(set: Set<string>): void {
   localStorage.setItem(FLAGGED_KEY, JSON.stringify([...set]));
 }
 
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof SessionExpiredError ? error.message : fallback;
+}
+
 // ── Undo snapshot type ───────────────────────────────────────────
 interface UndoEntry {
   session: FlashcardSession;
-  cardId: string;
-  prevFsrsState: FSRSCard;
+  prevCard: UserFlashcard;
   logId: string;
 }
 
@@ -47,28 +56,40 @@ export default function ReviewPage() {
   const [loading, setLoading] = useState(true);
   const [showSummary, setShowSummary] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [currentWord, setCurrentWord] = useState<any>(null);
+  // The word is stored with the card (id@position) it was loaded for, so a
+  // late or failed lookup can never show the previous card's word.
+  const [loadedWord, setLoadedWord] = useState<{ key: string; word: LexicalEntry | null } | null>(null);
+  const [loadError, setLoadError] = useState("");
+  const [actionError, setActionError] = useState("");
+  // Reused when retrying a failed save of the same card, so it isn't logged twice.
+  const attemptRef = useRef<{ key: string; logId: string } | null>(null);
+  const [intervalLabels, setIntervalLabels] = useState<Partial<Record<Rating, string>>>({});
   const [showHansWehr, setShowHansWehr] = useState(false);
   const [showMuyassar, setShowMuyassar] = useState(false);
   const [muyassarAvailable, setMuyassarAvailable] = useState(false);
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
-  const [flaggedWords, setFlaggedWords] = useState<Set<string>>(new Set());
+  // Read once on the client; the first render is the loading screen, which doesn't show flags.
+  const [flaggedWords, setFlaggedWords] = useState<Set<string>>(getFlaggedWords);
   const [justFlagged, setJustFlagged] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-
-  useEffect(() => {
-    setFlaggedWords(getFlaggedWords());
-  }, []);
+  // Held while a rating is saved or undone: a second rating (e.g. a double key
+  // press) or an undo is ignored until it finishes
+  const busyRef = useRef(false);
 
   useEffect(() => {
     async function initSession() {
-      const newSession = await createReviewSession();
-      if (!newSession) {
-        router.push("/train/flashcards");
-        return;
+      try {
+        const newSession = await createReviewSession();
+        if (!newSession) {
+          router.push("/train/flashcards");
+          return;
+        }
+        setSession(newSession);
+      } catch (error) {
+        console.error("Failed to start review session:", error);
+        setLoadError(errorMessage(error, "Your review session could not be loaded. Please try again."));
       }
-      setSession(newSession);
       setLoading(false);
     }
     initSession();
@@ -83,48 +104,96 @@ export default function ReviewPage() {
   }, [session, showSummary]);
 
   useEffect(() => {
-    async function loadWord() {
-      if (!session) { setCurrentWord(null); return; }
-      const card = getCurrentCard(session);
-      if (card) {
-        setMuyassarAvailable(false);
+    if (!session) return;
+    const card = getCurrentCard(session);
+    const key = sessionCardKey(session);
+    if (!card || !key) return;
+    let cancelled = false;
+    async function loadWord(card: UserFlashcard, key: string, algorithm: FlashcardSession["algorithm"]) {
+      setMuyassarAvailable(false);
+      // Next-interval previews, from the same scheduling code as the answer.
+      const preview = previewIntervals(card, algorithm, getFSRSParameters(), new Date());
+      setIntervalLabels({
+        1: formatInterval(preview[1]),
+        2: formatInterval(preview[2]),
+        3: formatInterval(preview[3]),
+        4: formatInterval(preview[4]),
+      });
+      try {
         const word = await getWordById(card.word_id);
-        if (word) setCurrentWord(word);
-      } else {
-        setCurrentWord(null);
+        if (!cancelled) setLoadedWord({ key, word });
+      } catch (error) {
+        console.error("Failed to load word:", error);
+        if (!cancelled) setLoadedWord({ key, word: null });
       }
     }
-    loadWord();
+    loadWord(card, key, session.algorithm);
+    return () => { cancelled = true; };
   }, [session]);
 
-  const handleReview = async (rating: Rating, durationMs: number) => {
+  const handleReview = (rating: Rating, durationMs: number) => runExclusive(busyRef, async () => {
     if (!session) return;
     const card = getCurrentCard(session);
     if (!card) return;
 
-    const undoEntry: UndoEntry = {
-      session,
-      cardId: card.id,
-      prevFsrsState: { ...card.fsrs_state },
-      logId: "",
-    };
+    const key = sessionCardKey(session)!;
+    if (attemptRef.current?.key !== key) attemptRef.current = { key, logId: crypto.randomUUID() };
 
-    const { updatedSession, logId } = await reviewCard(session, card.id, rating, durationMs);
-    undoEntry.logId = logId;
-    setUndoStack((prev) => [...prev.slice(-9), undoEntry]);
+    setActionError("");
+    try {
+      const { updatedSession, logId } = await reviewCard(session, card.id, rating, durationMs, attemptRef.current.logId);
+      attemptRef.current = null;
+      setUndoStack((prev) => [...prev.slice(-9), { session, prevCard: card, logId }]);
 
-    if (isSessionComplete(updatedSession)) setShowSummary(true);
-    setSession(updatedSession);
-  };
+      if (isSessionComplete(updatedSession)) setShowSummary(true);
+      setSession(updatedSession);
+    } catch (error) {
+      console.error("Failed to save review:", error);
+      // The session stays on this card; answering again retries safely.
+      setActionError(errorMessage(error, "Your answer could not be saved. Please answer again to retry."));
+    }
+  });
 
-  const handleUndo = async () => {
+  const handleUndo = () => runExclusive(busyRef, async () => {
     const last = undoStack[undoStack.length - 1];
     if (!last) return;
-    await undoReview(last.cardId, last.prevFsrsState, last.logId);
+    setActionError("");
+    try {
+      await undoReview(last.prevCard, last.logId, last.session.algorithm);
+    } catch (error) {
+      console.error("Failed to undo review:", error);
+      setActionError(errorMessage(error, "The last answer could not be undone. Please try again."));
+      return;
+    }
     setUndoStack((prev) => prev.slice(0, -1));
     setSession(last.session);
     setShowSummary(false);
-  };
+  });
+
+  // Latest undo handler for the keyboard listener below.
+  const undoRef = useRef(handleUndo);
+  useEffect(() => {
+    undoRef.current = handleUndo;
+  });
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!isUndoShortcut(e)) return;
+      e.preventDefault();
+      void undoRef.current();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  // Delete and skip take the same lock as rating and undo, so a save that
+  // finishes later can't put the removed card back (code review #5).
+  const handleSkipMissing = () => runExclusive(busyRef, async () => {
+    if (!session) return;
+    const updatedSession = removeCurrentCard(session);
+    if (isSessionComplete(updatedSession)) setShowSummary(true);
+    setSession(updatedSession);
+  });
 
   const handleFlag = () => {
     if (!session) return;
@@ -142,26 +211,25 @@ export default function ReviewPage() {
     saveFlaggedWords(updated);
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => runExclusive(busyRef, async () => {
     if (!session) return;
     const card = getCurrentCard(session);
     if (!card) return;
-    await deleteFlashcard(card.id);
-    // Remove card from session queue and keep current_index pointing at the next card
-    const updatedCards = session.cards.filter((_, i) => i !== session.current_index);
-    const updatedSession = {
-      ...session,
-      cards: updatedCards,
-      stats: { ...session.stats, total_cards: Math.max(0, session.stats.total_cards - 1) },
-    };
+    setActionError("");
+    try {
+      await deleteFlashcard(card.id);
+    } catch (error) {
+      console.error("Failed to delete card:", error);
+      setActionError(errorMessage(error, "The card could not be deleted. Please try again."));
+      return;
+    }
+    const updatedSession = removeCurrentCard(session);
     setUndoStack([]); // undo would be invalid after a delete
     setConfirmDelete(false);
     setMenuOpen(false);
-    if (updatedSession.current_index >= updatedCards.length) {
-      setShowSummary(true);
-    }
+    if (isSessionComplete(updatedSession)) setShowSummary(true);
     setSession(updatedSession);
-  };
+  });
 
   const formatTime = (ms: number) => {
     const s = Math.floor(ms / 1000);
@@ -179,10 +247,29 @@ export default function ReviewPage() {
     );
   }
 
+  if (loadError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-950 px-4">
+        <div role="alert" className="max-w-md text-center">
+          <p className="mb-6 text-gray-300">{loadError}</p>
+          <button
+            onClick={() => router.push("/train/flashcards")}
+            className="rounded-xl bg-emerald-600 px-6 py-3 font-semibold text-white hover:bg-emerald-500"
+          >
+            Back to flashcards
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!session) return null;
 
   const progress = getSessionProgress(session);
   const currentCard = getCurrentCard(session);
+  const currentKey = sessionCardKey(session);
+  const currentWord = wordForCard(loadedWord, currentKey);
+  const wordMissing = !!currentKey && loadedWord?.key === currentKey && !loadedWord.word;
   const isFlagged = flaggedWords.has(currentCard?.word_id ?? "");
 
   if (showSummary) {
@@ -212,7 +299,7 @@ export default function ReviewPage() {
               <div className="grid grid-cols-4 gap-2 text-center">
                 <div>
                   <div className="mb-1 text-2xl font-bold text-red-400">{session.stats.again_count}</div>
-                  <div className="text-xs text-gray-500">Again</div>
+                  <div className="text-xs text-gray-500">Forgot</div>
                 </div>
                 <div>
                   <div className="mb-1 text-2xl font-bold text-orange-400">{session.stats.hard_count}</div>
@@ -220,7 +307,7 @@ export default function ReviewPage() {
                 </div>
                 <div>
                   <div className="mb-1 text-2xl font-bold text-emerald-400">{session.stats.good_count}</div>
-                  <div className="text-xs text-gray-500">Good</div>
+                  <div className="text-xs text-gray-500">Got it</div>
                 </div>
                 <div>
                   <div className="mb-1 text-2xl font-bold text-blue-400">{session.stats.easy_count}</div>
@@ -232,7 +319,7 @@ export default function ReviewPage() {
             {flaggedWords.size > 0 && (
               <div className="flex items-center gap-2 rounded-2xl border border-yellow-800/40 bg-yellow-950/30 p-4 text-sm text-yellow-300">
                 <Flag aria-hidden="true" className="h-4 w-4 shrink-0" />
-                {flaggedWords.size} word{flaggedWords.size !== 1 ? "s" : ""} flagged for translation review
+                {flaggedWords.size} word{flaggedWords.size !== 1 ? "s" : ""} flagged on this device. To report a wrong translation, email support@quranarena.ca.
               </div>
             )}
 
@@ -254,7 +341,15 @@ export default function ReviewPage() {
         {/* Progress */}
         <div className="mb-6">
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-sm text-gray-400">{progress.current} / {progress.total} cards</span>
+            {/* Cards left in each queue, with the session's cards done (U2). */}
+            <span className="text-sm text-gray-400" aria-label={`${progress.remaining.new} new, ${progress.remaining.learning} learning and ${progress.remaining.review} review cards left; ${progress.done} of ${progress.total} cards done`}>
+              <span className="text-blue-400">{progress.remaining.new} new</span>
+              {" · "}
+              <span className="text-orange-400">{progress.remaining.learning} learning</span>
+              {" · "}
+              <span className="text-emerald-400">{progress.remaining.review} review</span>
+              <span className="ml-3">{progress.done} / {progress.total} cards done</span>
+            </span>
             <span className="text-sm text-gray-400">{formatTime(elapsedTime)}</span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-gray-800">
@@ -330,7 +425,7 @@ export default function ReviewPage() {
             {/* Flag button */}
             <button
               onClick={handleFlag}
-              title="Flag word as incorrect translation"
+              title="Mark this translation as possibly wrong (saved on this device only)"
               className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors ${
                 isFlagged
                   ? "border-yellow-500/50 bg-yellow-500/10 text-yellow-400"
@@ -375,18 +470,40 @@ export default function ReviewPage() {
           </div>
         </div>
 
+        {actionError && (
+          <p role="alert" className="mb-4 rounded-xl border border-red-900/60 bg-red-950/30 p-3 text-sm text-red-300">
+            {actionError}
+          </p>
+        )}
+
         {/* Card */}
         <div className="mb-6 flex items-center justify-center">
           {currentWord ? (
             <FlashcardReview
+              // Remount per card once its word is loaded, so the answer timer
+              // and flip state reset for the card actually shown
+              key={currentKey ?? session.current_index}
               word={currentWord}
               onReview={handleReview}
+              intervalLabels={intervalLabels}
               showRoot={true}
               showExamples={true}
               showHansWehr={showHansWehr}
               showMuyassar={showMuyassar}
               onMuyassarAvailable={setMuyassarAvailable}
             />
+          ) : wordMissing ? (
+            <div className="text-center text-gray-400">
+              <p className="mb-4">This word&apos;s details could not be loaded, so it can&apos;t be reviewed right now.</p>
+              <button
+                onClick={handleSkipMissing}
+                className="rounded-lg border border-gray-700 bg-gray-900 px-4 py-2 text-sm text-gray-300 hover:border-gray-600"
+              >
+                Skip this card
+              </button>
+            </div>
+          ) : currentCard ? (
+            <div className="text-center text-gray-400">Loading word...</div>
           ) : (
             <div className="text-center text-gray-400">No more cards to review</div>
           )}

@@ -6,7 +6,7 @@ export async function POST(request: Request) {
   const cookieCarrier = new NextResponse();
   const playerId = await resolvePlayerId(request, cookieCarrier.cookies);
   if (!playerId) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json({ error: "Authentication required." }, { status: 401, headers: cookieCarrier.headers });
   }
 
   const body = (await request.json().catch(() => null)) as
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     | null;
 
   if (!body?.game_id || !body.round_id) {
-    return NextResponse.json({ error: "game_id and round_id are required." }, { status: 400 });
+    return NextResponse.json({ error: "game_id and round_id are required." }, { status: 400, headers: cookieCarrier.headers });
   }
 
   try {

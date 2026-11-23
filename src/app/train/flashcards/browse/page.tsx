@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { getFlashcards, deleteFlashcard, updateFlashcard } from "@/lib/storage/flashcard-storage-supabase";
+import { getFlashcards, deleteFlashcard, unlearnFlashcard, SessionExpiredError } from "@/lib/storage/flashcard-storage-supabase";
+import { isStudyCard } from "@/lib/flashcard/queue";
 import { loadLexicalDB, getWordById } from "@/lib/corpus/lexical-db";
 import { FSRSState } from "@/lib/types/flashcard";
 import type { UserFlashcard, LexicalEntry } from "@/lib/types/flashcard";
@@ -31,9 +32,23 @@ interface CardRow {
   word: LexicalEntry | null;
 }
 
+// Module scope: a component defined during render is a new type on every
+// render, so React would remount it each time.
+function SortIcon({ k, sortKey, sortDir }: { k: SortKey; sortKey: SortKey; sortDir: SortDir }) {
+  return sortKey !== k ? (
+    <span className="text-gray-700">↕</span>
+  ) : sortDir === "asc" ? (
+    <span className="text-emerald-400">↑</span>
+  ) : (
+    <span className="text-emerald-400">↓</span>
+  );
+}
+
 export default function BrowsePage() {
   const [rows, setRows] = useState<CardRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [actionError, setActionError] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("due");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [stateFilter, setStateFilter] = useState<StateFilter>("all");
@@ -44,43 +59,58 @@ export default function BrowsePage() {
 
   useEffect(() => {
     async function load() {
-      const [cards, db] = await Promise.all([getFlashcards(), loadLexicalDB()]);
-      const wordMap = new Map(db.map((e) => [e.id, e]));
-      const rows = await Promise.all(
-        cards.map(async (card) => ({
-          card,
-          word: wordMap.get(card.word_id) ?? (await getWordById(card.word_id)),
-        }))
-      );
-      setRows(rows);
+      try {
+        const [cards, db] = await Promise.all([getFlashcards(), loadLexicalDB()]);
+        const wordMap = new Map(db.map((e) => [e.id, e]));
+        const rows = await Promise.all(
+          cards.filter(isStudyCard).map(async (card) => ({
+            card,
+            word: wordMap.get(card.word_id) ?? (await getWordById(card.word_id)),
+          }))
+        );
+        setRows(rows);
+      } catch (error) {
+        console.error("Failed to load deck:", error);
+        setLoadError("Your deck could not be loaded. Please check your connection and try again.");
+      }
       setLoading(false);
     }
     load();
   }, []);
 
+  // A failed delete or reset closes the confirmation and says what happened
+  // (an expired session asks the user to sign in again, M10).
+  const reportActionError = (error: unknown, fallback: string) => {
+    console.error(fallback, error);
+    setActionError(error instanceof SessionExpiredError ? error.message : fallback);
+  };
+
   const handleDelete = async (cardId: string) => {
-    await deleteFlashcard(cardId);
+    setActionError("");
+    try {
+      await deleteFlashcard(cardId);
+    } catch (error) {
+      reportActionError(error, "The card could not be deleted. Please try again.");
+      setPendingAction(null);
+      return;
+    }
     setRows((prev) => prev.filter((r) => r.card.id !== cardId));
     setPendingAction(null);
   };
 
   const handleUnlearn = async (cardId: string) => {
-    const resetState = {
-      due: new Date(),
-      stability: 0,
-      difficulty: 0,
-      elapsed_days: 0,
-      scheduled_days: 0,
-      learning_steps: 0,
-      reps: 0,
-      lapses: 0,
-      state: FSRSState.New,
-      last_review: undefined,
-    };
-    await updateFlashcard(cardId, { fsrs_state: resetState });
+    setActionError("");
+    let resetState: Awaited<ReturnType<typeof unlearnFlashcard>>;
+    try {
+      resetState = await unlearnFlashcard(cardId);
+    } catch (error) {
+      reportActionError(error, "The card could not be reset. Please try again.");
+      setPendingAction(null);
+      return;
+    }
     setRows((prev) =>
       prev.map((r) =>
-        r.card.id === cardId ? { ...r, card: { ...r.card, fsrs_state: resetState } } : r
+        r.card.id === cardId ? { ...r, card: { ...r.card, fsrs_state: resetState, sm2_state: null } } : r
       )
     );
     setPendingAction(null);
@@ -132,15 +162,6 @@ export default function BrowsePage() {
     });
   }, [rows, stateFilter, search, sortKey, sortDir]);
 
-  const SortIcon = ({ k }: { k: SortKey }) =>
-    sortKey !== k ? (
-      <span className="text-gray-700">↕</span>
-    ) : sortDir === "asc" ? (
-      <span className="text-emerald-400">↑</span>
-    ) : (
-      <span className="text-emerald-400">↓</span>
-    );
-
   const formatDue = (due: Date) => {
     const d = new Date(due);
     const now = new Date();
@@ -163,6 +184,14 @@ export default function BrowsePage() {
     );
   }
 
+  if (loadError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-950 px-4">
+        <p role="alert" className="max-w-md text-center text-gray-300">{loadError}</p>
+      </div>
+    );
+  }
+
   const stateCounts = Object.values(FSRSState).filter((v) => typeof v === "number") as FSRSState[];
 
   return (
@@ -180,6 +209,12 @@ export default function BrowsePage() {
             ← Back
           </Link>
         </div>
+
+        {actionError && (
+          <p role="alert" className="mb-6 rounded-xl border border-red-900/60 bg-red-950/30 p-4 text-sm text-red-300">
+            {actionError}
+          </p>
+        )}
 
         {/* Filters */}
         <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -231,13 +266,13 @@ export default function BrowsePage() {
                     className="cursor-pointer px-4 py-3 text-left font-medium text-gray-400 hover:text-white"
                     onClick={() => handleSort("state")}
                   >
-                    <span className="flex items-center gap-1">State <SortIcon k="state" /></span>
+                    <span className="flex items-center gap-1">State <SortIcon k="state" sortKey={sortKey} sortDir={sortDir} /></span>
                   </th>
                   <th
                     className="cursor-pointer px-4 py-3 text-left font-medium text-gray-400 hover:text-white"
                     onClick={() => handleSort("due")}
                   >
-                    <span className="flex items-center gap-1">Due <SortIcon k="due" /></span>
+                    <span className="flex items-center gap-1">Due <SortIcon k="due" sortKey={sortKey} sortDir={sortDir} /></span>
                   </th>
                   <th
                     className="cursor-pointer px-4 py-3 text-left font-medium text-gray-400 hover:text-white"
@@ -259,14 +294,14 @@ export default function BrowsePage() {
                           </div>
                         )}
                       </span>
-                      <SortIcon k="stability" />
+                      <SortIcon k="stability" sortKey={sortKey} sortDir={sortDir} />
                     </span>
                   </th>
                   <th
                     className="cursor-pointer px-4 py-3 text-left font-medium text-gray-400 hover:text-white"
                     onClick={() => handleSort("lapses")}
                   >
-                    <span className="flex items-center gap-1">Lapses <SortIcon k="lapses" /></span>
+                    <span className="flex items-center gap-1">Lapses <SortIcon k="lapses" sortKey={sortKey} sortDir={sortDir} /></span>
                   </th>
                   <th className="px-4 py-3 text-left font-medium text-gray-400">Actions</th>
                 </tr>

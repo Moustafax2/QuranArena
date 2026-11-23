@@ -10,13 +10,18 @@ import {
   resetAllData,
   exportData,
   getFSRSParameters,
-  saveFSRSParameters,
   getReviewLog,
   getAlgorithmPreference,
-  saveAlgorithmPreference,
+  saveAlgorithmChoice,
   clearAllSM2States,
+  SessionExpiredError,
 } from "@/lib/storage/flashcard-storage-supabase";
 import { DEFAULT_PREFERENCES, DEFAULT_FSRS_PARAMETERS } from "@/lib/types/flashcard";
+import { settle } from "@/lib/settle";
+
+function expiredMessage(error: unknown): string | null {
+  return error instanceof SessionExpiredError ? error.message : null;
+}
 
 // ──────────────────────────────────────────────────────────────────
 // Info tooltip component
@@ -71,23 +76,23 @@ function AlgorithmSwitchModal({
             <AlertTriangle aria-hidden="true" className="h-5 w-5" />
           </div>
           <h2 className="text-lg font-bold text-white">
-            Switch to {toFSRS ? "FSRS" : "SM-2 (Legacy)"}?
+            Switch to {toFSRS ? "FSRS (recommended)" : "Classic (SM-2 based)"}?
           </h2>
         </div>
 
         {step === 1 && (
           <>
             <div className="mb-5 space-y-3 rounded-xl border border-amber-800/40 bg-amber-950/30 p-4 text-sm text-amber-200/80">
-              <p className="font-semibold text-amber-300">Why you shouldn't switch algorithms often:</p>
+              <p className="font-semibold text-amber-300">Why you shouldn&apos;t switch algorithms often:</p>
               <ul className="ml-4 list-disc space-y-2 text-amber-200/70">
                 <li>
                   <strong>Each algorithm tracks memory separately.</strong> FSRS uses stability &amp; difficulty
-                  curves; SM-2 uses an easiness factor and fixed repetition counts. Neither can read the
+                  curves; Classic uses a single ease factor per card. Neither can read the
                   other&apos;s data.
                 </li>
                 <li>
                   <strong>Switching resets your scheduling history</strong> for the new algorithm. All cards
-                  restart at day&nbsp;1 for {toFSRS ? "FSRS" : "SM-2"}, even if you&apos;ve already reviewed
+                  restart at day&nbsp;1 for {toFSRS ? "FSRS" : "Classic"}, even if you&apos;ve already reviewed
                   them hundreds of times.
                 </li>
                 <li>
@@ -97,8 +102,8 @@ function AlgorithmSwitchModal({
                 </li>
                 <li>
                   {toFSRS
-                    ? "FSRS is significantly more accurate than SM-2 at predicting forgetting. We recommend staying on FSRS unless you have a specific reason to switch."
-                    : "SM-2 is a simpler, older algorithm (1987). It works, but FSRS is more accurate, especially after you accumulate review history."}
+                    ? "FSRS is significantly more accurate than Classic at predicting forgetting. We recommend staying on FSRS unless you have a specific reason to switch."
+                    : "Classic is a simpler, older approach built on SM-2 (1987). It works, but FSRS is more accurate, especially after you accumulate review history."}
                 </li>
               </ul>
             </div>
@@ -122,9 +127,9 @@ function AlgorithmSwitchModal({
         {step === 2 && (
           <>
             <p className="mb-4 text-sm text-gray-400">
-              Your existing {toFSRS ? "SM-2" : "FSRS"} review progress will be kept in case you switch back,
+              Your existing {toFSRS ? "Classic" : "FSRS"} review progress will be kept in case you switch back,
               but <strong className="text-white">all cards will restart from scratch</strong> under{" "}
-              {toFSRS ? "FSRS" : "SM-2"}.
+              {toFSRS ? "FSRS" : "Classic"}.
             </p>
             <label className="mb-5 flex cursor-pointer items-start gap-3 rounded-xl border border-gray-700 bg-gray-800 p-4">
               <input
@@ -135,7 +140,7 @@ function AlgorithmSwitchModal({
               />
               <span className="text-sm text-gray-300">
                 I understand that switching resets my scheduling progress for{" "}
-                {toFSRS ? "FSRS" : "SM-2"} and I should not switch frequently.
+                {toFSRS ? "FSRS" : "Classic"} and I should not switch frequently.
               </span>
             </label>
             <div className="flex gap-3">
@@ -150,7 +155,7 @@ function AlgorithmSwitchModal({
                 onClick={onConfirm}
                 className="flex-1 rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                Switch to {toFSRS ? "FSRS" : "SM-2"}
+                Switch to {toFSRS ? "FSRS" : "Classic"}
               </button>
             </div>
           </>
@@ -187,7 +192,7 @@ function ResetWarningModal({
           <p className="font-semibold text-red-300">This will permanently delete:</p>
           <ul className="ml-4 list-disc space-y-1.5 text-red-200/70">
             <li>All your <strong>review history</strong> and scheduling data</li>
-            <li>All <strong>FSRS and SM-2 card states</strong> (intervals, stability, difficulty)</li>
+            <li>All <strong>FSRS and Classic card states</strong> (intervals, stability, difficulty)</li>
             <li>All <strong>learned and due cards</strong> — everything restarts from zero</li>
           </ul>
           <p className="mt-2 text-red-300/90 font-medium">This cannot be undone.</p>
@@ -237,6 +242,8 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [reviewCount, setReviewCount] = useState(0);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   // Algorithm switch flow
   const [algoSwitchTarget, setAlgoSwitchTarget] = useState<"fsrs" | "sm2" | null>(null);
@@ -245,45 +252,76 @@ export default function SettingsPage() {
   // Reset warning
   const [showResetWarning, setShowResetWarning] = useState(false);
 
+  // Each async step runs through settle(), which never rejects, so the flag
+  // reset on the next line runs on every exit path (A4 review #10). A
+  // try/finally here would make the React Compiler lint skip this component.
   useEffect(() => {
     async function loadPrefs() {
-      const [preferences, logs] = await Promise.all([
-        getPreferences(),
-        getReviewLog(),
-      ]);
-      // Merge algorithm from localStorage (not stored in Supabase)
-      const algo = getAlgorithmPreference();
-      setPrefs({ ...preferences, algorithm: algo });
+      const result = await settle(() => Promise.all([getPreferences(), getReviewLog()]));
+      setLoading(false);
+      if (!result.ok) {
+        console.error("Failed to load settings:", result.error);
+        // An expired session says so and asks the user to sign in again (M10, Phase 2 D1).
+        setError(expiredMessage(result.error) ?? "Could not load your saved settings. Showing defaults; saving may overwrite them.");
+        return;
+      }
+      const [preferences, logs] = result.value;
+      // getPreferences has already synced the algorithm and FSRS parameters
+      // into the device copy read here.
+      setPrefs({ ...preferences, algorithm: getAlgorithmPreference() });
       setFsrsParams(getFSRSParameters());
       setReviewCount(logs.length);
-      setLoading(false);
     }
     loadPrefs();
   }, []);
 
   const handleSave = async () => {
-    await savePreferences(prefs);
-    saveFSRSParameters(fsrsParams);
-    saveAlgorithmPreference(prefs.algorithm);
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    const result = await settle(() => savePreferences(prefs, fsrsParams));
+    setBusy(false);
+    if (!result.ok) {
+      console.error("Failed to save settings:", result.error);
+      setError(expiredMessage(result.error) ?? "Your settings could not be saved. Please try again.");
+      return;
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
   const handleReset = async () => {
-    await resetAllData();
-    clearAllSM2States();
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    const result = await settle(async () => {
+      await resetAllData();
+      clearAllSM2States();
+    });
+    setBusy(false);
+    if (!result.ok) {
+      console.error("Failed to reset data:", result.error);
+      setError(expiredMessage(result.error) ?? "Your data could not be fully reset. Please try again.");
+      return;
+    }
     router.push("/train/flashcards");
   };
 
   const handleExport = async () => {
-    const data = await exportData();
-    const blob = new Blob([data], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `quranarena-backup-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    setError("");
+    try {
+      const data = await exportData();
+      const blob = new Blob([data], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `quranarena-backup-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("Failed to export data:", e);
+      setError("Your data could not be exported. Please try again.");
+    }
   };
 
   const handleResetFSRS = () => setFsrsParams(DEFAULT_FSRS_PARAMETERS);
@@ -293,11 +331,21 @@ export default function SettingsPage() {
     setAlgoSwitchTarget(target);
   };
 
-  const confirmAlgoSwitch = () => {
+  const confirmAlgoSwitch = async () => {
     if (!algoSwitchTarget) return;
-    setPrefs((p) => ({ ...p, algorithm: algoSwitchTarget }));
-    saveAlgorithmPreference(algoSwitchTarget);
+    const previous = prefs;
+    setPrefs({ ...prefs, algorithm: algoSwitchTarget });
     setAlgoSwitchTarget(null);
+    // The choice is synced with the other preferences, so save it right away.
+    // If that fails, the device and this page go back to the old algorithm.
+    setError("");
+    try {
+      await saveAlgorithmChoice(previous, algoSwitchTarget, fsrsParams);
+    } catch (e) {
+      console.error("Failed to save algorithm:", e);
+      setPrefs(previous);
+      setError(expiredMessage(e) ?? "The algorithm change could not be saved to your account. Please try again.");
+    }
   };
 
   const updatePref = <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => {
@@ -321,7 +369,7 @@ export default function SettingsPage() {
       {algoSwitchTarget && (
         <AlgorithmSwitchModal
           targetAlgo={algoSwitchTarget}
-          onConfirm={confirmAlgoSwitch}
+          onConfirm={() => void confirmAlgoSwitch()}
           onCancel={() => setAlgoSwitchTarget(null)}
         />
       )}
@@ -342,6 +390,12 @@ export default function SettingsPage() {
           <h1 className="mb-2 text-3xl font-bold text-white">Settings</h1>
           <p className="text-gray-400">Customize your learning experience</p>
         </div>
+
+        {error && (
+          <p role="alert" className="mb-6 rounded-xl border border-red-900/60 bg-red-950/30 p-4 text-sm text-red-300">
+            {error}
+          </p>
+        )}
 
         <div className="space-y-6">
           {/* ── Card Display ───────────────────────────────────────── */}
@@ -399,15 +453,29 @@ export default function SettingsPage() {
             <div className="space-y-6">
               {(
                 [
-                  ["daily_new_cards_limit",    "Daily new cards",    0,   50],
-                  ["daily_review_cards_limit", "Daily review cards", 0,  200],
+                  ["daily_new_cards_limit",    "New words per day",  0,   50],
+                  // Up to 9999, so the default of 200 can be raised
+                  // (verification N6). The slider is coarse over that range,
+                  // so the number can also be typed.
+                  ["daily_review_cards_limit", "Reviews per day",    0, 9999],
                   ["session_size",             "Session size",       5,   50],
                 ] as const
               ).map(([key, label, min, max]) => (
                 <div key={key}>
                   <label className="mb-2 flex items-center justify-between text-gray-300">
                     <span>{label}</span>
-                    <span className="text-emerald-400">{prefs[key]}</span>
+                    {key === "daily_review_cards_limit" ? (
+                      <input type="number" min={min} max={max} step={1} inputMode="numeric"
+                        aria-label={label}
+                        value={prefs[key]}
+                        onChange={(e) => {
+                          const value = Number(e.target.value);
+                          if (e.target.value !== "" && Number.isInteger(value) && value >= min && value <= max) updatePref(key, value);
+                        }}
+                        className="w-24 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-right text-emerald-400" />
+                    ) : (
+                      <span className="text-emerald-400">{prefs[key]}</span>
+                    )}
                   </label>
                   <input type="range" min={min} max={max}
                     value={prefs[key] as number}
@@ -415,6 +483,15 @@ export default function SettingsPage() {
                     className="w-full" />
                 </div>
               ))}
+              <label className="flex items-center justify-between">
+                <span className="flex items-center text-gray-300">
+                  New words ignore the review limit
+                  <InfoTip text="When off, new words share the daily review budget, so a busy review day also brings fewer new words. Turn it on to always get your full daily quota of new words, even on heavy review days." />
+                </span>
+                <input type="checkbox" checked={prefs.new_cards_ignore_review_limit}
+                  onChange={(e) => updatePref("new_cards_ignore_review_limit", e.target.checked)}
+                  className="h-5 w-5 rounded border-gray-700 bg-gray-800 text-emerald-600 focus:ring-2 focus:ring-emerald-500" />
+              </label>
             </div>
           </div>
 
@@ -480,16 +557,16 @@ export default function SettingsPage() {
                       </div>
                     </div>
 
-                    {/* Maximum Interval */}
+                    {/* Longest gap between reviews (maximum interval) */}
                     <div>
                       <label className="mb-2 flex items-center justify-between text-sm text-gray-300">
                         <span className="flex items-center">
-                          Maximum Interval
-                          <InfoTip text="The longest gap FSRS will schedule between reviews. Even if the algorithm predicts you could wait 2 years, this caps it. Lower values give you more frequent refreshes; higher values let FSRS stretch mature cards further." />
+                          Longest gap between reviews
+                          <InfoTip text="No word waits longer than this before it comes back, whichever algorithm you use. Lower values give you more frequent refreshers of words you know well; higher values let well-known words rest for longer." />
                         </span>
                         <span className="font-mono text-emerald-400">{fsrsParams.maximum_interval}d</span>
                       </label>
-                      <input type="range" min="7" max="365" step="1"
+                      <input type="range" min="7" max="36500" step="1"
                         value={fsrsParams.maximum_interval}
                         onChange={(e) =>
                           setFsrsParams((p) => ({ ...p, maximum_interval: parseInt(e.target.value) }))
@@ -497,7 +574,7 @@ export default function SettingsPage() {
                         className="w-full" />
                       <div className="mt-1 flex justify-between text-xs text-gray-600">
                         <span>7 days</span>
-                        <span>365 days</span>
+                        <span>36500 days</span>
                       </div>
                     </div>
 
@@ -542,7 +619,7 @@ export default function SettingsPage() {
                 <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-5">
                   <div className="mb-3 flex items-center">
                     <span className="font-medium text-white">Scheduling Algorithm</span>
-                    <InfoTip text="FSRS (recommended) is a modern algorithm that accurately models human memory using a forgetting curve. SM-2 is the classic 1987 algorithm used by Anki; it's simpler but less accurate. Only switch if you have a specific reason — switching resets your scheduling history for the new algorithm." />
+                    <InfoTip text="FSRS (recommended) learns how quickly you forget each word and plans reviews around that. Classic (SM-2 based) grows each word's gap by a fixed multiplier, with short practice steps for new and forgotten words; it is simpler and easier to predict, but usually needs more reviews. Switching starts every word's schedule over, so only switch if you have a reason to." />
                   </div>
 
                   {!showAlgoSection ? (
@@ -550,7 +627,7 @@ export default function SettingsPage() {
                       onClick={() => setShowAlgoSection(true)}
                       className="w-full rounded-xl border border-dashed border-gray-600 px-4 py-3 text-sm text-gray-500 transition-colors hover:border-gray-500 hover:text-gray-400"
                     >
-                      Current algorithm: <strong className="text-gray-300">{prefs.algorithm === "fsrs" ? "FSRS" : "SM-2 (Legacy)"}</strong> — Click to change
+                      Current algorithm: <strong className="text-gray-300">{prefs.algorithm === "fsrs" ? "FSRS (recommended)" : "Classic (SM-2 based)"}</strong> — Click to change
                     </button>
                   ) : (
                     <div className="space-y-3">
@@ -568,7 +645,7 @@ export default function SettingsPage() {
                           }`}
                         >
                           <div className="mb-1 font-semibold text-white">
-                            FSRS
+                            FSRS <span className="text-xs font-normal text-gray-500">(recommended)</span>
                             {prefs.algorithm === "fsrs" && (
                               <span className="ml-2 inline-flex items-center gap-0.5 text-xs text-emerald-400">
                                 <Check aria-hidden="true" className="h-3 w-3" /> Active
@@ -576,7 +653,7 @@ export default function SettingsPage() {
                             )}
                           </div>
                           <div className="text-xs text-gray-400">
-                            Modern algorithm. Accurate forgetting curves. Recommended.
+                            Modern algorithm that models your forgetting curve.
                           </div>
                         </button>
                         <button
@@ -588,7 +665,7 @@ export default function SettingsPage() {
                           }`}
                         >
                           <div className="mb-1 font-semibold text-white">
-                            SM-2 <span className="text-xs font-normal text-gray-500">(Legacy)</span>
+                            Classic <span className="text-xs font-normal text-gray-500">(SM-2 based)</span>
                             {prefs.algorithm === "sm2" && (
                               <span className="ml-2 inline-flex items-center gap-0.5 text-xs text-amber-400">
                                 <Check aria-hidden="true" className="h-3 w-3" /> Active
@@ -596,7 +673,7 @@ export default function SettingsPage() {
                             )}
                           </div>
                           <div className="text-xs text-gray-400">
-                            Classic 1987 algorithm. Simpler, but less accurate than FSRS.
+                            Fixed growth per answer, with short practice steps. Simpler, but less accurate than FSRS.
                           </div>
                         </button>
                       </div>
@@ -614,7 +691,7 @@ export default function SettingsPage() {
                     <div className="text-sm text-gray-500">Download your flashcards and progress</div>
                   </button>
                   <button
-                    onClick={handleReset}
+                    onClick={() => setShowResetWarning(true)}
                     className="w-full rounded-xl border border-red-900 bg-red-950 px-4 py-3 text-left text-red-400 transition-all hover:border-red-700 hover:bg-red-900"
                   >
                     <div className="font-medium">Reset All Data</div>
@@ -635,6 +712,7 @@ export default function SettingsPage() {
             </button>
             <button
               onClick={handleSave}
+              disabled={busy}
               className="flex-1 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 px-6 py-3 font-semibold text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl"
             >
               {saved ? (

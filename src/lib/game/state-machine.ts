@@ -11,6 +11,8 @@ export interface RoundData {
   prompt_verse_key: string;
   prompt_text: string;
   options?: OptionData[];
+  /** When the server ends the round, on this device's clock (audit H5). */
+  deadline_ms?: number | null;
 }
 
 export interface OptionData {

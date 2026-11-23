@@ -20,6 +20,8 @@ interface FlashcardReviewProps {
   showHansWehr?: boolean;
   showMuyassar?: boolean;
   onMuyassarAvailable?: (available: boolean) => void;
+  /** Next-interval label shown on each rating button, e.g. { 1: "1m", 3: "10m" }. */
+  intervalLabels?: Partial<Record<Rating, string>>;
   initialFlipped?: boolean;
   previewMode?: boolean;
 }
@@ -113,105 +115,115 @@ export function FlashcardReview({
   showHansWehr = false,
   showMuyassar = false,
   onMuyassarAvailable,
+  intervalLabels,
   initialFlipped = false,
   previewMode = false,
 }: FlashcardReviewProps) {
   const [isFlipped, setIsFlipped] = useState(initialFlipped);
   const [showAlternateMeanings, setShowAlternateMeanings] = useState(false);
-  const [startTime] = useState(Date.now());
-  const [hansWehrDef, setHansWehrDef] = useState<string | null>(null);
-  const [hansWehrLoading, setHansWehrLoading] = useState(false);
-  const [verseTexts, setVerseTexts] = useState<Record<string, string>>({});
-  const [muyassarMatch, setMuyassarMatch] = useState<MuyassarMatch | null>(null);
-  const [muyassarVerseText, setMuyassarVerseText] = useState<string | null>(null);
+  const [startTime] = useState(() => Date.now());
+  // Each lookup result is stored with what it was looked up for, and shown
+  // only while that is still current. That replaces resetting state at the
+  // start of an effect, and a late reply for an earlier word is never shown.
+  const [hansWehr, setHansWehr] = useState<{ root: string; def: string | null } | null>(null);
+  const [exampleTexts, setExampleTexts] = useState<{ wordId: string; texts: Record<string, string> } | null>(null);
+  const [muyassar, setMuyassar] = useState<{ wordId: string; match: MuyassarMatch | null } | null>(null);
+  const [muyassarVerse, setMuyassarVerse] = useState<{ key: string; text: string } | null>(null);
+
+  const hansWehrActive = showHansWehr && Boolean(word.root);
+  const hansWehrDef = hansWehrActive && hansWehr && hansWehr.root === word.root ? hansWehr.def : null;
+  const hansWehrLoading = hansWehrActive && hansWehr?.root !== word.root;
+  const verseTexts = exampleTexts?.wordId === word.id ? exampleTexts.texts : {};
+  const muyassarMatch = muyassar?.wordId === word.id ? muyassar.match : null;
+  const muyassarKey = muyassarMatch ? `${muyassarMatch.surah}:${muyassarMatch.ayah}` : null;
+  const muyassarVerseText = muyassarKey && muyassarVerse?.key === muyassarKey ? muyassarVerse.text : null;
 
   useEffect(() => {
-    if (!showHansWehr || !word.root) {
-      setHansWehrDef(null);
-      return;
-    }
-    setHansWehrLoading(true);
-    fetch(`/api/hanswehr?root=${encodeURIComponent(word.root)}`)
-      .then((r) => r.json())
-      .then((data) => setHansWehrDef(data.definition ?? null))
-      .catch(() => setHansWehrDef(null))
-      .finally(() => setHansWehrLoading(false));
+    if (!showHansWehr || !word.root) return;
+    const root = word.root;
+    // Ignore a response that arrives after the word or toggle has changed.
+    let cancelled = false;
+    fetch(`/api/hanswehr?root=${encodeURIComponent(root)}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`Hans Wehr lookup failed (${r.status})`);
+        return r.json();
+      })
+      .then((data) => { if (!cancelled) setHansWehr({ root, def: data.definition ?? null }); })
+      .catch(() => { if (!cancelled) setHansWehr({ root, def: null }); });
+    return () => { cancelled = true; };
   }, [showHansWehr, word.root]);
 
   // Fetch muyassar match whenever the word changes
   useEffect(() => {
-    setMuyassarMatch(null);
-    setMuyassarVerseText(null);
     if (!word.examples || word.examples.length === 0) return;
+    const wordId = word.id;
 
     let cancelled = false;
 
+    // One request for the first 8 examples (it used to be up to 8 in a row);
+    // the first example, in order, with a matching single-word entry wins.
     async function findMatch() {
-      for (const ex of word.examples.slice(0, 8)) {
-        if (cancelled) return;
-        try {
-          const res = await fetch(`/api/muyassar?surah=${ex.surah}&ayah=${ex.ayah}`);
-          const data = await res.json();
-          const entries: MuyassarParsedEntry[] = data.entries ?? [];
-          for (const entry of entries) {
-            if (!entry.isSingleWord) continue;
-            if (wordMatchesCanonical(entry.quranicWord, word.canonical_form)) {
-              if (!cancelled) {
-                setMuyassarMatch({ ...entry, surah: ex.surah, ayah: ex.ayah });
-                onMuyassarAvailable?.(true);
-              }
-              return;
-            }
-          }
-        } catch {
-          // ignore
+      const examples = word.examples.slice(0, 8);
+      let results: Record<string, MuyassarParsedEntry[]> = {};
+      try {
+        const verses = examples.map((ex) => `${ex.surah}:${ex.ayah}`).join(",");
+        const res = await fetch(`/api/muyassar?verses=${encodeURIComponent(verses)}`);
+        if (res.ok) results = (await res.json()).results ?? {};
+      } catch {
+        // ignore: no Muyassar entry is shown
+      }
+      if (cancelled) return;
+      for (const ex of examples) {
+        const entry = (results[`${ex.surah}:${ex.ayah}`] ?? []).find(
+          (e) => e.isSingleWord && wordMatchesCanonical(e.quranicWord, word.canonical_form)
+        );
+        if (entry) {
+          setMuyassar({ wordId, match: { ...entry, surah: ex.surah, ayah: ex.ayah } });
+          onMuyassarAvailable?.(true);
+          return;
         }
       }
-      if (!cancelled) onMuyassarAvailable?.(false);
+      setMuyassar({ wordId, match: null });
+      onMuyassarAvailable?.(false);
     }
 
     findMatch();
     return () => { cancelled = true; };
-  }, [word]);
+    // The review page passes a state setter, which is stable, so this runs once per word.
+  }, [word, onMuyassarAvailable]);
 
   // Fetch the verse text for the muyassar match
   useEffect(() => {
-    if (!muyassarMatch) return;
-    const key = `${muyassarMatch.surah}:${muyassarMatch.ayah}`;
-    if (verseTextCache.has(key)) {
-      setMuyassarVerseText(verseTextCache.get(key)!);
-      return;
-    }
-    fetch(`https://api.quran.com/api/v4/verses/by_key/${key}?fields=text_uthmani`)
-      .then((r) => r.json())
-      .then((data) => {
-        const text: string = data?.verse?.text_uthmani ?? "";
-        verseTextCache.set(key, text);
-        setMuyassarVerseText(text);
-      })
-      .catch(() => {});
-  }, [muyassarMatch]);
+    if (!muyassarKey) return;
+    const key = muyassarKey;
+    const cached = verseTextCache.get(key);
+    // A cached text goes through the same promise as a fetched one, so state
+    // is only ever set from a callback.
+    const text: Promise<string> = cached !== undefined
+      ? Promise.resolve(cached)
+      : fetch(`https://api.quran.com/api/v4/verses/by_key/${key}?fields=text_uthmani`)
+          .then((r) => r.json())
+          .then((data) => {
+            const fetched: string = data?.verse?.text_uthmani ?? "";
+            verseTextCache.set(key, fetched);
+            return fetched;
+          });
+    let cancelled = false;
+    text.then((value) => { if (!cancelled) setMuyassarVerse({ key, text: value }); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [muyassarKey]);
 
   // Fetch verse texts for examples when card is flipped
   useEffect(() => {
     if (!isFlipped || !showExamples || word.examples.length === 0) return;
+    const wordId = word.id;
 
     const toFetch = word.examples.slice(0, 3).filter((ex) => {
       const key = `${ex.surah}:${ex.ayah}`;
       return !verseTextCache.has(key);
     });
 
-    if (toFetch.length === 0) {
-      // All already cached, populate local state
-      const texts: Record<string, string> = {};
-      word.examples.slice(0, 3).forEach((ex) => {
-        const key = `${ex.surah}:${ex.ayah}`;
-        if (verseTextCache.has(key)) texts[key] = verseTextCache.get(key)!;
-      });
-      setVerseTexts(texts);
-      return;
-    }
-
+    // Already-cached texts resolve at once; the rest are fetched.
     Promise.all(
       toFetch.map((ex) =>
         fetch(
@@ -235,9 +247,9 @@ export function FlashcardReview({
       results.forEach((r) => {
         if (r) texts[r.key] = r.text;
       });
-      setVerseTexts(texts);
+      setExampleTexts({ wordId, texts });
     });
-  }, [isFlipped, showExamples, word.examples]);
+  }, [isFlipped, showExamples, word.examples, word.id]);
 
   const handleFlip = useCallback(() => {
     setIsFlipped((prev) => !prev);
@@ -509,30 +521,38 @@ export function FlashcardReview({
         <div className="mt-6 grid grid-cols-4 gap-3">
           <button
             onClick={() => handleReview(1)}
+            aria-label={intervalLabels?.[1] ? `Forgot, next review in ${intervalLabels[1]}` : "Forgot"}
             className="group flex flex-col items-center gap-2 rounded-xl bg-gradient-to-br from-red-600 to-red-700 px-4 py-4 font-medium text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl active:scale-95"
           >
-            <span>Again</span>
+            <span>Forgot</span>
+            {intervalLabels?.[1] && <span className="text-xs font-normal opacity-80">{intervalLabels[1]}</span>}
             <span className="rounded bg-red-800/50 px-2 py-0.5 text-xs">1</span>
           </button>
           <button
             onClick={() => handleReview(2)}
+            aria-label={intervalLabels?.[2] ? `Hard, next review in ${intervalLabels[2]}` : "Hard"}
             className="group flex flex-col items-center gap-2 rounded-xl bg-gradient-to-br from-orange-600 to-orange-700 px-4 py-4 font-medium text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl active:scale-95"
           >
             <span>Hard</span>
+            {intervalLabels?.[2] && <span className="text-xs font-normal opacity-80">{intervalLabels[2]}</span>}
             <span className="rounded bg-orange-800/50 px-2 py-0.5 text-xs">2</span>
           </button>
           <button
             onClick={() => handleReview(3)}
+            aria-label={intervalLabels?.[3] ? `Got it, next review in ${intervalLabels[3]}` : "Got it"}
             className="group flex flex-col items-center gap-2 rounded-xl bg-gradient-to-br from-emerald-600 to-emerald-700 px-4 py-4 font-medium text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl active:scale-95"
           >
-            <span>Good</span>
+            <span>Got it</span>
+            {intervalLabels?.[3] && <span className="text-xs font-normal opacity-80">{intervalLabels[3]}</span>}
             <span className="rounded bg-emerald-800/50 px-2 py-0.5 text-xs">3</span>
           </button>
           <button
             onClick={() => handleReview(4)}
+            aria-label={intervalLabels?.[4] ? `Easy, next review in ${intervalLabels[4]}` : "Easy"}
             className="group flex flex-col items-center gap-2 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 px-4 py-4 font-medium text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl active:scale-95"
           >
             <span>Easy</span>
+            {intervalLabels?.[4] && <span className="text-xs font-normal opacity-80">{intervalLabels[4]}</span>}
             <span className="rounded bg-blue-800/50 px-2 py-0.5 text-xs">4</span>
           </button>
         </div>

@@ -1,6 +1,6 @@
 import type { LexicalEntry, UserFlashcard, WordStatus } from "@/lib/types/flashcard";
 import { getWordsBySurah } from "@/lib/corpus/lexical-db";
-import { getFlashcards, addFlashcard } from "@/lib/storage/flashcard-storage-supabase";
+import { getFlashcards, addFlashcards } from "@/lib/storage/flashcard-storage-supabase";
 import { createNewCard } from "@/lib/fsrs/scheduler";
 
 const QURAN_API = "https://api.quran.com/api/v4";
@@ -58,7 +58,11 @@ export async function addWordsToBank(
     ? await getSurahVerseLocationMap(surahNumber).catch(() => new Map<number, { pageNumber: number; juzNumber: number }>())
     : new Map<number, { pageNumber: number; juzNumber: number }>();
 
-  const promises = wordIds.map(async (wordId) => {
+  // The server lists cards by created_at, then id. Cards of one batch are a
+  // millisecond apart, so new words keep the order they were added in rather
+  // than the random order of their ids (verification D5).
+  const batchStart = Date.now();
+  const cards = wordIds.map((wordId, index): UserFlashcard => {
     const sourceExample = surahNumber
       ? wordMap.get(wordId)?.examples.find((example) => example.surah === surahNumber) ?? null
       : null;
@@ -66,21 +70,21 @@ export async function addWordsToBank(
       ? verseLocationMap.get(sourceExample.ayah) ?? null
       : null;
 
-    const card: UserFlashcard = {
+    return {
       id: crypto.randomUUID(),
       word_id: wordId,
       fsrs_state: createNewCard(),
-      created_at: new Date(),
+      created_at: new Date(batchStart + index),
       status,
       source_surah_id: sourceExample?.surah ?? null,
       source_ayah_number: sourceExample?.ayah ?? null,
       source_page_number: verseLocation?.pageNumber ?? null,
       source_juz_number: verseLocation?.juzNumber ?? null,
     };
-    await addFlashcard(card);
   });
 
-  await Promise.all(promises);
+  // One request for the whole batch instead of one per word.
+  await addFlashcards(cards);
 }
 
 export async function getWordIntakeStats(surahNumber: number): Promise<{

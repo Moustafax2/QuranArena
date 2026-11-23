@@ -6,7 +6,7 @@ export async function GET(request: Request) {
   const cookieCarrier = new NextResponse();
   const playerId = await resolvePlayerId(request, cookieCarrier.cookies);
   if (!playerId) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json({ error: "Authentication required." }, { status: 401, headers: cookieCarrier.headers });
   }
 
   try {

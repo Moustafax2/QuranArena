@@ -1,16 +1,25 @@
 import { NextResponse } from "next/server";
-import { resolvePlayerId } from "@/lib/multiplayer/resolve-player";
+import { resolvePlayerSession } from "@/lib/multiplayer/resolve-player";
 import { invokeSupabaseEdgeFunction } from "@/lib/multiplayer/server";
-import { getUsableSession } from "@/lib/qf-user/session";
 import { listAcceptedFriendQfUserIds } from "@/lib/social/friends";
 import { createGameInvitations } from "@/lib/social/invitations";
 
 export async function POST(request: Request) {
   const cookieCarrier = new NextResponse();
-  const playerId = await resolvePlayerId(request, cookieCarrier.cookies);
-  if (!playerId) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  // One session lookup per request: a second one would refresh again with the
+  // same refresh token and sign the user out (audit H2).
+  let resolved: Awaited<ReturnType<typeof resolvePlayerSession>>;
+  try {
+    resolved = await resolvePlayerSession(cookieCarrier.cookies);
+  } catch {
+    // The sign-in could not be checked right now (QF or the database is
+    // unreachable); the cookies are kept for the next attempt.
+    return NextResponse.json({ error: "Your session could not be checked. Please try again." }, { status: 503, headers: cookieCarrier.headers });
   }
+  if (!resolved) {
+    return NextResponse.json({ error: "Authentication required." }, { status: 401, headers: cookieCarrier.headers });
+  }
+  const { playerId, session } = resolved;
 
   const body = (await request.json().catch(() => null)) as
     | {
@@ -26,11 +35,10 @@ export async function POST(request: Request) {
     | null;
 
   if (!body?.game_mode) {
-    return NextResponse.json({ error: "game_mode is required." }, { status: 400 });
+    return NextResponse.json({ error: "game_mode is required." }, { status: 400, headers: cookieCarrier.headers });
   }
 
   try {
-    const session = await getUsableSession(cookieCarrier.cookies);
     const invitees = (body.invitees ?? [])
       .filter((invitee) => Boolean(invitee?.id && invitee.displayName))
       .filter((invitee) => invitee.id !== session?.user.sub)

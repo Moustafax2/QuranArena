@@ -1,4 +1,5 @@
-import { FSRSState } from "@/lib/types/flashcard";
+import { isStudyCard, type Algorithm } from "@/lib/flashcard/queue";
+import { computeDeckStats, isPassRating, retentionFraction } from "@/lib/flashcard/stats";
 import type { MemorizationAttempt } from "@/lib/memorization/types";
 import type { ReviewLogEntry, UserFlashcard } from "@/lib/types/flashcard";
 import type {
@@ -67,7 +68,8 @@ function normalizeFlashcardEvents(
       source,
       timestamp: review.timestamp.toISOString(),
       score,
-      success: review.rating >= 3,
+      // Hard is a pass, as on the stats page (verification N1).
+      success: isPassRating(review.rating),
       verseKey:
         card?.source_surah_id != null && card.source_ayah_number != null
           ? `${card.source_surah_id}:${card.source_ayah_number}`
@@ -105,25 +107,24 @@ function buildFlashcardSummary(input: {
   dueCount: number;
   newCount: number;
   source: FlashcardProgressSummary["source"];
+  algorithm: Algorithm;
 }): FlashcardProgressSummary {
-  const matureCards = input.cards.filter(
-    (card) =>
-      card.fsrs_state.state === FSRSState.Review && card.fsrs_state.stability >= 21
-  ).length;
-  const learningCards = input.cards.filter(
-    (card) =>
-      card.fsrs_state.state === FSRSState.Learning ||
-      card.fsrs_state.state === FSRSState.Relearning
-  ).length;
-  const successfulReviews = input.reviews.filter((review) => review.rating >= 3).length;
+  // The stats page's definitions (stats.ts), so both pages agree
+  // (verification N1): study cards only, the active algorithm's state,
+  // mature by an interval of 21 days or more, and retention over the first
+  // review answer per card per study day, with Hard as a pass.
+  const cards = input.cards.filter(isStudyCard);
+  const { matureCards, learningCards } = computeDeckStats(cards, input.reviews, {
+    dailyNewLimit: 0,
+    algorithm: input.algorithm,
+  });
 
   return {
-    totalCards: input.cards.length,
+    totalCards: cards.length,
     dueCount: input.dueCount,
     newCount: input.newCount,
     reviews: input.reviews.length,
-    retentionRate:
-      input.reviews.length > 0 ? successfulReviews / input.reviews.length : null,
+    retentionRate: retentionFraction(input.reviews),
     matureCards,
     learningCards,
     source: input.source,
@@ -261,6 +262,8 @@ export function buildProgressDashboard(input: {
   dueCount: number;
   newCount: number;
   memorizationAttempts: MemorizationAttempt[];
+  /** The flashcard algorithm in use; the summary reads its state. */
+  algorithm?: Algorithm;
 }): ProgressDashboard {
   const sources = resolveDashboardSources({
     isAuthenticated: input.isAuthenticated,
@@ -341,6 +344,7 @@ export function buildProgressDashboard(input: {
     dueCount: input.dueCount,
     newCount: input.newCount,
     source: sources.flashcards,
+    algorithm: input.algorithm ?? "fsrs",
   });
 
   return {

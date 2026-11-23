@@ -1,10 +1,10 @@
-import { FSRS, Rating as FSRSRating, Card, State } from "ts-fsrs";
+import { FSRS, GenSeedStrategyWithCardId, Rating as FSRSRating, StrategyMode, Card, State } from "ts-fsrs";
 import type { FSRSCard, UserFlashcard, Rating, FSRSParameters } from "@/lib/types/flashcard";
 import { FSRSState } from "@/lib/types/flashcard";
 
 const fsrs = new FSRS({
   request_retention: 0.9,
-  maximum_interval: 365,
+  maximum_interval: 36500,
   enable_fuzz: true,
   w: [
     0.212, 1.2931, 2.3065, 8.2956, 6.4133, 0.8334, 3.0194, 0.001, 1.8722,
@@ -92,9 +92,13 @@ function doScheduleReview(
   scheduler: FSRS,
   card: FSRSCard,
   rating: Rating,
-  reviewDate: Date
+  reviewDate: Date,
+  cardId?: string
 ): { card: FSRSCard } {
-  const tsCard = fsrsCardToCard(card);
+  // With a card id, the fuzz is seeded by card id + review count instead of
+  // the review time, so a previewed interval matches the scheduled one.
+  const tsCard = cardId ? { ...fsrsCardToCard(card), card_id: cardId } : fsrsCardToCard(card);
+  if (cardId) scheduler.useStrategy(StrategyMode.SEED, GenSeedStrategyWithCardId("card_id"));
   const grade = mapRatingToGrade(rating);
   const schedulingInfo = scheduler.repeat(tsCard, reviewDate);
 
@@ -104,7 +108,38 @@ function doScheduleReview(
   else if (grade === FSRSRating.Good) result = schedulingInfo[FSRSRating.Good];
   else                                result = schedulingInfo[FSRSRating.Easy];
 
-  return { card: cardToFSRSCard(result.card) };
+  const capped = withinMaximum(cardToFSRSCard(result.card), reviewDate, scheduler.parameters.maximum_interval);
+  return { card: onStudyDays(capped, reviewDate) };
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * ts-fsrs keeps Hard, Good and Easy at least a day apart after capping them
+ * at the maximum interval, so at the cap Good and Easy came out one and two
+ * days past it (verification D8). The maximum is a hard limit, as in Classic.
+ */
+function withinMaximum(card: FSRSCard, reviewDate: Date, maximumInterval: number): FSRSCard {
+  if (card.state !== FSRSState.Review || card.scheduled_days <= maximumInterval) return card;
+  return { ...card, scheduled_days: maximumInterval, due: new Date(reviewDate.getTime() + maximumInterval * DAY_MS) };
+}
+
+/**
+ * ts-fsrs puts a review card N x 24 hours after the answer. The queue counts
+ * days from the 4am local rollover, so across a DST change that could land a
+ * day early (even the same study day) or a day late (verification D1). Keep
+ * the answer's local wall-clock time instead, N calendar days later, as the
+ * Classic scheduler does: the card is then due exactly N study days later.
+ * Only the due date moves; the memory state and scheduled_days are ts-fsrs's
+ * own, and ts-fsrs measures elapsed time from last_review, not from due.
+ */
+function onStudyDays(card: FSRSCard, reviewDate: Date): FSRSCard {
+  const days = card.scheduled_days;
+  if (card.state !== FSRSState.Review || days < 1) return card;
+  if (card.due.getTime() !== reviewDate.getTime() + days * DAY_MS) return card;
+  const due = new Date(reviewDate);
+  due.setDate(due.getDate() + days);
+  return { ...card, due };
 }
 
 export function scheduleReview(
@@ -119,7 +154,8 @@ export function scheduleReviewWithParams(
   card: FSRSCard,
   rating: Rating,
   params: FSRSParameters,
-  reviewDate: Date = new Date()
+  reviewDate: Date = new Date(),
+  cardId?: string
 ): { card: FSRSCard } {
   const scheduler = new FSRS({
     request_retention: params.request_retention,
@@ -127,18 +163,7 @@ export function scheduleReviewWithParams(
     enable_fuzz: params.enable_fuzz,
     w: params.w,
   });
-  return doScheduleReview(scheduler, card, rating, reviewDate);
-}
-
-export function getDueCards(cards: UserFlashcard[]): UserFlashcard[] {
-  const now = new Date();
-  return cards.filter((card) => new Date(card.fsrs_state.due) <= now);
-}
-
-export function getNewCards(cards: UserFlashcard[], limit: number): UserFlashcard[] {
-  return cards
-    .filter((card) => card.fsrs_state.state === FSRSState.New)
-    .slice(0, limit);
+  return doScheduleReview(scheduler, card, rating, reviewDate, cardId);
 }
 
 export function getLearningCards(cards: UserFlashcard[]): UserFlashcard[] {
@@ -159,45 +184,4 @@ export function getMatureCards(cards: UserFlashcard[]): UserFlashcard[] {
       card.fsrs_state.state === FSRSState.Review &&
       card.fsrs_state.stability >= 21
   );
-}
-
-export function getCardsForSession(
-  cards: UserFlashcard[],
-  newLimit: number,
-  reviewLimit: number
-): UserFlashcard[] {
-  const dueCards = getDueCards(cards);
-  const newCards = getNewCards(cards, newLimit);
-
-  const reviewCards = dueCards.filter(
-    (card) => card.fsrs_state.state !== FSRSState.New
-  );
-
-  return [
-    ...reviewCards.slice(0, reviewLimit),
-    ...newCards.slice(0, newLimit),
-  ];
-}
-
-export function calculateRetention(card: FSRSCard, now: Date = new Date()): number {
-  const tsCard = fsrsCardToCard(card);
-  // Explicitly pass false to get a number back (not formatted string)
-  return fsrs.get_retrievability(tsCard, now, false);
-}
-
-export function getNextReviewIntervals(card: FSRSCard): {
-  again: number;
-  hard: number;
-  good: number;
-  easy: number;
-} {
-  const tsCard = fsrsCardToCard(card);
-  const schedulingInfo = fsrs.repeat(tsCard, new Date());
-
-  return {
-    again: schedulingInfo[FSRSRating.Again].card.scheduled_days,
-    hard:  schedulingInfo[FSRSRating.Hard].card.scheduled_days,
-    good:  schedulingInfo[FSRSRating.Good].card.scheduled_days,
-    easy:  schedulingInfo[FSRSRating.Easy].card.scheduled_days,
-  };
 }

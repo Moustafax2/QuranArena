@@ -4,6 +4,7 @@ import type {
   MemorizationAttempt,
   MemorizationAttemptInput,
 } from "@/lib/memorization/types";
+import { getCurrentPlayerId } from "@/lib/current-player";
 
 export type RatingLevel = 0 | 1 | 2;
 
@@ -24,6 +25,28 @@ export interface VerseRecord {
 const LEGACY_RECORDS_KEY = "qalamspace_memorization_ratings";
 const ATTEMPTS_KEY = "qalamspace_memorization_attempts";
 const MIGRATION_KEY_PREFIX = "qalamspace_memorization_synced_v1";
+// Attempts the server failed to save (audit M7). Each load retries them, and
+// reads include them until they are flushed. Each one carries the player that
+// was signed in when it was made (an account or a guest), so it is only ever
+// uploaded to, or shown to, that player. The key is learning data: the guest
+// expiry, the privacy export and withdraw/delete cover it.
+const OUTBOX_KEY = "qalamspace_memorization_outbox";
+
+type OutboxEntry = {
+  owner: string;
+  attempt: ReturnType<typeof serializeAttempt>;
+  /** Date.now() when queued; the age cap counts from here. */
+  queued_at?: number;
+  /** Server failures counted against this entry (see flushOutbox). */
+  tries?: number;
+};
+
+// Poison-entry caps (audit M7). An entry older than this, or one the
+// server failed this many times while it saved others, is dropped.
+const OUTBOX_MAX_AGE_MS = 30 * 86_400_000;
+const OUTBOX_MAX_TRIES = 5;
+// After a failed batch, at most this many entries are sent one by one per load.
+const OUTBOX_MAX_SINGLE_SENDS = 25;
 
 type LegacyRecords = Record<string, VerseRecord>;
 
@@ -238,10 +261,172 @@ function saveLocalAttempts(attempts: MemorizationAttempt[]): void {
   saveLegacyRecords(records);
 }
 
-function readLocalAttempts(): MemorizationAttempt[] {
+function readJsonArray(key: string): unknown[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function isOwnedEntry(entry: unknown): entry is OutboxEntry {
+  const candidate = entry as Partial<OutboxEntry> | null;
+  return typeof candidate?.owner === "string" && candidate.owner !== "" &&
+    typeof candidate.attempt === "object" && candidate.attempt !== null;
+}
+
+function loadOutbox(): OutboxEntry[] {
+  if (!isBrowser()) return [];
+  const entries = readJsonArray(OUTBOX_KEY);
+  const owned = entries.filter(isOwnedEntry);
+  // An entry without an owner is not one this code wrote. Nobody can tell
+  // whose it is, so it is dropped rather than guessed.
+  if (owned.length !== entries.length) saveOutbox(owned);
+  return owned;
+}
+
+function saveOutbox(entries: OutboxEntry[]): void {
+  if (!isBrowser()) return;
+  if (entries.length === 0) localStorage.removeItem(OUTBOX_KEY);
+  else localStorage.setItem(OUTBOX_KEY, JSON.stringify(entries));
+}
+
+/** When an entry was queued; an entry without that time uses the attempt's. */
+function queuedAt(entry: OutboxEntry): number {
+  return typeof entry.queued_at === "number" ? entry.queued_at : Date.parse(entry.attempt.tested_at);
+}
+
+/**
+ * An entry worth sending: the shape the server stores (the same rules as the
+ * attempt the app builds), and not past the age cap.
+ */
+function isSendable(entry: OutboxEntry, now: number): boolean {
+  const attempt = entry.attempt as Partial<OutboxEntry["attempt"]>;
+  return typeof attempt.client_attempt_id === "string" && attempt.client_attempt_id.length > 0 &&
+    (attempt.mode === "ayah" || attempt.mode === "page-blank") &&
+    Number.isInteger(attempt.rating_level) && (attempt.rating_level as number) >= 0 && (attempt.rating_level as number) <= 2 &&
+    typeof attempt.tested_at === "string" && !Number.isNaN(Date.parse(attempt.tested_at)) &&
+    now - queuedAt(entry) <= OUTBOX_MAX_AGE_MS;
+}
+
+/** Pending attempts that belong to `playerId`. */
+function pendingAttempts(playerId: string | null): MemorizationAttempt[] {
+  if (playerId === null) return [];
+  const now = Date.now();
+  return loadOutbox()
+    .filter((entry) => entry.owner === playerId && isSendable(entry, now))
+    .map((entry) => normalizeAttempt({ ...entry.attempt, tested_at: new Date(entry.attempt.tested_at) }));
+}
+
+/**
+ * Uploads this player's pending attempts and returns the ids that left the
+ * outbox without being saved. The server upserts on (player_id,
+ * client_attempt_id), so a retry after a lost reply never duplicates one.
+ *
+ * One bad entry must not hold back the rest: malformed and
+ * expired entries are dropped unsent; when the batch fails, each entry is
+ * sent on its own. An entry the server refuses for good (a 4xx) is dropped.
+ * One that keeps failing with a 5xx/408/429 is dropped after
+ * OUTBOX_MAX_TRIES, but a failure counts only when another entry got through
+ * in the same flush, so an outage never uses up the tries.
+ */
+async function flushOutbox(playerId: string): Promise<Set<string>> {
+  const now = Date.now();
+  const mine = loadOutbox().filter((entry) => entry.owner === playerId);
+  const saved = new Set<string>();
+  const dropped = new Set<string>();
+  const failed = new Set<string>();
+  const live = mine.filter((entry) => {
+    if (isSendable(entry, now)) return true;
+    dropped.add(entry.attempt.client_attempt_id);
+    return false;
+  });
+
+  if (live.length > 0) {
+    const batch = await sendAttempts("PUT", live.map((entry) => entry.attempt));
+    if (batch.kind === "saved") {
+      for (const entry of live) saved.add(entry.attempt.client_attempt_id);
+    } else if (batch.kind !== "offline" && batch.kind !== "unauthenticated") {
+      // The server answered with an error: find which entries it refuses.
+      for (const entry of live.slice(0, OUTBOX_MAX_SINGLE_SENDS)) {
+        const id = entry.attempt.client_attempt_id;
+        const one = live.length === 1 ? batch : await sendAttempts("PUT", [entry.attempt]);
+        if (one.kind === "saved") saved.add(id);
+        else if (one.kind === "rejected") dropped.add(id);
+        else if (one.kind === "retry") failed.add(id);
+        else break;
+      }
+    }
+  }
+
+  const healthy = saved.size > 0;
+  saveOutbox(loadOutbox().flatMap((entry) => {
+    const id = entry.attempt.client_attempt_id;
+    if (entry.owner !== playerId) return [entry];
+    if (saved.has(id) || dropped.has(id)) return [];
+    if (!healthy || !failed.has(id)) return [entry];
+    const tries = (entry.tries ?? 0) + 1;
+    if (tries >= OUTBOX_MAX_TRIES) {
+      dropped.add(id);
+      return [];
+    }
+    return [{ ...entry, tries }];
+  }));
+  if (dropped.size > 0) console.warn(`Dropped ${dropped.size} memorization attempt(s) the server would not save.`);
+  return dropped;
+}
+
+type SendOutcome =
+  | { kind: "saved" }
+  | { kind: "unauthenticated" }
+  // No answer from the server (offline, or the request never arrived).
+  | { kind: "offline" }
+  // The server answered with an error that may pass: 5xx, 408 or 429.
+  | { kind: "retry"; status: number }
+  // The server refused it for good (any other 4xx).
+  | { kind: "rejected"; status: number; message: string };
+
+/** Errors worth retrying later. Any other failure is permanent (audit M7). */
+export function isRetryableStatus(status: number): boolean {
+  return status >= 500 || status === 408 || status === 429;
+}
+
+async function sendAttempts(method: "POST" | "PUT", body: unknown): Promise<SendOutcome> {
+  let response: Response;
+  try {
+    response = await fetch("/api/memorization/attempts", {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    return { kind: "offline" };
+  }
+  if (response.ok) return { kind: "saved" };
+  if (response.status === 401) return { kind: "unauthenticated" };
+  if (isRetryableStatus(response.status)) return { kind: "retry", status: response.status };
+  const text = await response.text().catch(() => "");
+  let message = text;
+  try {
+    const parsed = JSON.parse(text) as { error?: unknown };
+    if (typeof parsed?.error === "string") message = parsed.error;
+  } catch {
+    // Not JSON: the text is the message.
+  }
+  return { kind: "rejected", status: response.status, message: message || "The server refused this attempt." };
+}
+
+/** Attempts kept only on this device (no account or guest session at the time). */
+function readDeviceAttempts(): MemorizationAttempt[] {
   const storedAttempts = loadStoredAttempts();
   const legacyAttempts = legacyRecordsToAttempts(loadLegacyRecords());
   return dedupeAttempts([...storedAttempts, ...legacyAttempts]);
+}
+
+/** What to show when the server can't be read: device attempts plus pending ones. */
+function readLocalAttempts(): MemorizationAttempt[] {
+  return dedupeAttempts([...readDeviceAttempts(), ...pendingAttempts(getCurrentPlayerId())]);
 }
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T | null> {
@@ -260,7 +445,7 @@ async function maybeMigrateLocalAttempts(playerId: string): Promise<boolean> {
   const migrationKey = `${MIGRATION_KEY_PREFIX}:${playerId}`;
   if (localStorage.getItem(migrationKey) === "true") return false;
 
-  const attempts = readLocalAttempts();
+  const attempts = readDeviceAttempts();
   if (attempts.length === 0) {
     localStorage.setItem(migrationKey, "true");
     return false;
@@ -281,14 +466,20 @@ async function getSyncedAttempts(): Promise<MemorizationAttempt[] | null> {
   const payload = await apiFetch<SyncAttemptsResponse>("/api/memorization/attempts");
   if (payload === null) return null;
 
-  const migrated = await maybeMigrateLocalAttempts(payload.player_id).catch(() => false);
-  if (!migrated) {
-    return payload.attempts.map(hydrateAttempt);
-  }
+  // Read before the flush: whatever it sends is not in `payload` yet.
+  // Entries the flush dropped unsaved are left out.
+  const queued = pendingAttempts(payload.player_id);
+  const dropped = await flushOutbox(payload.player_id).catch(() => new Set<string>());
+  const pending = queued.filter((attempt) => !dropped.has(attempt.client_attempt_id));
 
-  const refreshed = await apiFetch<SyncAttemptsResponse>("/api/memorization/attempts");
-  if (refreshed === null) return payload.attempts.map(hydrateAttempt);
-  return refreshed.attempts.map(hydrateAttempt);
+  const migrated = await maybeMigrateLocalAttempts(payload.player_id).catch(() => false);
+  let rows = payload.attempts;
+  if (migrated) {
+    const refreshed = await apiFetch<SyncAttemptsResponse>("/api/memorization/attempts");
+    if (refreshed !== null) rows = refreshed.attempts;
+  }
+  // Server rows come last, so they win over a pending copy of the same attempt.
+  return dedupeAttempts([...pending, ...rows.map(hydrateAttempt)]);
 }
 
 function buildRecordsFromAttempts(attempts: MemorizationAttempt[]): Record<string, VerseRecord> {
@@ -321,22 +512,34 @@ export async function saveMemorizationAttempt(
   input: MemorizationAttemptInput
 ): Promise<MemorizationAttempt> {
   const attempt = normalizeAttempt(input);
+  const outcome = await sendAttempts("POST", serializeAttempt(attempt));
+  if (outcome.kind === "saved") return attempt;
 
-  try {
-    const result = await apiFetch<{ ok: boolean }>("/api/memorization/attempts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(serializeAttempt(attempt)),
-    });
-
-    if (result !== null) {
-      return attempt;
-    }
-  } catch {
-    // Fall through to local persistence so offline/local-only users still keep progress.
+  if (outcome.kind === "rejected") {
+    // A permanent refusal (a 400, or a 403 when consent is missing) would fail
+    // on every retry, so it is reported now and not queued.
+    throw new Error(`Your rating could not be saved: ${outcome.message}`);
   }
 
-  const attempts = dedupeAttempts([...readLocalAttempts(), attempt]);
+  if (outcome.kind !== "unauthenticated") {
+    // The network failed, or the server failed in a way that may pass: keep it
+    // in the outbox, which the next load uploads. Before, it went to the local
+    // attempts, which are uploaded only once per player, and was then hidden
+    // (audit M7). It belongs to the player signed in now; with
+    // none known it can't be kept.
+    const owner = getCurrentPlayerId();
+    if (owner === null) {
+      throw new Error("Your rating could not be saved. Check your connection and try again.");
+    }
+    saveOutbox([
+      ...loadOutbox().filter((entry) => entry.attempt.client_attempt_id !== attempt.client_attempt_id),
+      { owner, attempt: serializeAttempt(attempt), queued_at: Date.now(), tries: 0 },
+    ]);
+    return attempt;
+  }
+
+  // 401: no account or guest session, so the attempt stays on this device.
+  const attempts = dedupeAttempts([...readDeviceAttempts(), attempt]);
   saveLocalAttempts(attempts);
   return attempt;
 }
@@ -400,4 +603,5 @@ export async function clearAllRecords(): Promise<void> {
   if (!isBrowser()) return;
   localStorage.removeItem(LEGACY_RECORDS_KEY);
   localStorage.removeItem(ATTEMPTS_KEY);
+  localStorage.removeItem(OUTBOX_KEY);
 }

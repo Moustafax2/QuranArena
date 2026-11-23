@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
   if (!roomCode || !body?.invitees?.length) {
     return NextResponse.json(
       { error: "roomCode and invitees are required." },
-      { status: 400 }
+      { status: 400, headers: cookieCarrier.headers }
     );
   }
 
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
   if (!recipients.length) {
     return NextResponse.json(
       { error: "At least one valid invitee is required." },
-      { status: 400 }
+      { status: 400, headers: cookieCarrier.headers }
     );
   }
 
@@ -92,24 +92,24 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
 
   if (roomResponse.error) {
-    return NextResponse.json({ error: roomResponse.error.message }, { status: 500 });
+    return NextResponse.json({ error: roomResponse.error.message }, { status: 500, headers: cookieCarrier.headers });
   }
 
   if (!roomResponse.data) {
-    return NextResponse.json({ error: "Room not found." }, { status: 404 });
+    return NextResponse.json({ error: "Room not found." }, { status: 404, headers: cookieCarrier.headers });
   }
 
   if (roomResponse.data.host_id !== session.player_id) {
     return NextResponse.json(
       { error: "Only the room host can invite friends." },
-      { status: 403 }
+      { status: 403, headers: cookieCarrier.headers }
     );
   }
 
   if (roomResponse.data.status !== "lobby") {
     return NextResponse.json(
       { error: "Invites can only be sent while the room is in the lobby." },
-      { status: 400 }
+      { status: 400, headers: cookieCarrier.headers }
     );
   }
 

@@ -733,6 +733,12 @@ export default function GameRoomPage({ params, searchParams }: Props) {
   const isHost = player?.id === roomInfo?.host_id;
   const phase: GamePhase = gameState.phase;
 
+  // The game just awarded points: re-read the shared auth state so the header
+  // and the account page show the new totals (audit H2: one shared state).
+  useEffect(() => {
+    if (phase === "game_over") void refresh();
+  }, [phase, refresh]);
+
   async function handleStartGame() {
     if (!roomInfo || !player || starting) return;
     setStarting(true);
@@ -1106,6 +1112,7 @@ export default function GameRoomPage({ params, searchParams }: Props) {
 
 import type { GameState } from "@/lib/game/state-machine";
 import type { RoomPlayer } from "@/lib/hooks/useRoom";
+import { answerStateAfterSubmit, secondsLeft } from "@/lib/multiplayer/round-client";
 
 interface GameProps {
   gameId: string | null;
@@ -1147,6 +1154,9 @@ function GameInProgress({
   const [pinnedRound, setPinnedRound] = useState<typeof gameState.current_round>(null);
   const [showingResult, setShowingResult] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  // Ticks the round countdown (audit H5); the server ends the round at the
+  // same deadline.
+  const [now, setNow] = useState(() => Date.now());
   const resultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -1195,6 +1205,11 @@ function GameInProgress({
     };
   }, [phase, result]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(tick);
+  }, []);
+
   // Clean up on unmount only
   useEffect(() => {
     return () => {
@@ -1207,6 +1222,8 @@ function GameInProgress({
   const effectivePhase = showingResult ? "round_result" : phase;
   const effectiveResult = showingResult ? pinnedResult : result;
   const effectiveRound = (showingResult && pinnedRound) ? pinnedRound : round;
+  const timeLeft = effectivePhase === "round_active" ? secondsLeft(effectiveRound?.deadline_ms, now) : null;
+  const timeUp = timeLeft === 0;
 
   // Infer per-round mode from the data so mixed-mode games label correctly.
   const isTrivia = effectiveRound?.prompt_verse_key?.startsWith("trivia-") ?? false;
@@ -1286,14 +1303,16 @@ function GameInProgress({
   if (!round) return null;
 
   async function handleSelect(verseKey: string) {
-    if (answered) return;
+    if (answered || timeUp) return;
     setSelected(verseKey);
     setAnswered(true);
     setSubmitError(null);
     const result = await onSubmitAnswer(round!.round_id, verseKey);
-    if (!result.ok) {
-      setSubmitError(result.error ?? "Failed to submit answer");
-    }
+    // A failed submission unlocks the options for a retry (audit H5).
+    const next = answerStateAfterSubmit(result, verseKey);
+    setAnswered(next.answered);
+    setSelected(next.selected);
+    setSubmitError(next.error);
   }
 
   async function handleBuzzer() {
@@ -1327,8 +1346,18 @@ function GameInProgress({
               <span className="text-gray-500">Room </span>
               <span className="font-mono text-gray-300">{roomCode}</span>
             </div>
-            <span className="text-gray-600">
-              Round {effectiveRound?.round_number}/{effectiveRound?.total_rounds}
+            <span className="flex items-center gap-3">
+              {timeLeft !== null && (
+                <span
+                  aria-label={`${timeLeft} seconds left`}
+                  className={`font-mono font-semibold ${timeLeft <= 5 ? "text-red-400" : "text-gray-300"}`}
+                >
+                  {timeLeft}s
+                </span>
+              )}
+              <span className="text-gray-600">
+                Round {effectiveRound?.round_number}/{effectiveRound?.total_rounds}
+              </span>
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -1450,7 +1479,7 @@ function GameInProgress({
           <div className="text-center">
             <button
               onClick={handleBuzzer}
-              disabled={buzzed}
+              disabled={buzzed || timeUp}
               className={`h-32 w-32 rounded-full text-2xl font-bold transition-all ${
                 buzzed
                   ? "bg-gray-700 text-gray-500"
@@ -1481,7 +1510,7 @@ function GameInProgress({
                 <button
                   key={option.verse_key}
                   onClick={() => handleSelect(option.verse_key)}
-                  disabled={answered}
+                  disabled={answered || timeUp}
                   className={`rounded-xl border transition-all ${
                     isFillInBlank || isWordMeaning || isTrivia ? "p-4 text-center" : "p-4 text-right"
                   } ${style}`}
@@ -1503,6 +1532,12 @@ function GameInProgress({
               );
             })}
           </div>
+        )}
+
+        {timeUp && !answered && !effectiveResult && (
+          <p className="mt-4 text-center text-sm text-gray-500">
+            Time is up. Waiting for the round to close...
+          </p>
         )}
 
         {answered && !effectiveResult && (

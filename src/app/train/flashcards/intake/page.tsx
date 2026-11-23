@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CardType, WordStatus } from "@/lib/types/flashcard";
 import type { LexicalEntry } from "@/lib/types/flashcard";
+import { SessionExpiredError } from "@/lib/storage/flashcard-storage-supabase";
 import {
   getSurahWords,
   filterNewWords,
@@ -20,12 +21,25 @@ function IntakeContent() {
   const [words, setWords] = useState<LexicalEntry[]>([]);
   const [wordActions, setWordActions] = useState<Map<string, WordAction>>(new Map());
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [filter, setFilter] = useState<"all" | CardType>("all");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   useEffect(() => {
     async function loadWords() {
-      const allWords = await getSurahWords(surahNumber);
-      const newWords = await filterNewWords(allWords);
+      let newWords: LexicalEntry[];
+      try {
+        const allWords = await getSurahWords(surahNumber);
+        newWords = await filterNewWords(allWords);
+      } catch (error) {
+        console.error("Failed to load words:", error);
+        setLoadError(error instanceof SessionExpiredError
+          ? error.message
+          : "The words for this surah could not be loaded. Please check your connection and try again.");
+        setLoading(false);
+        return;
+      }
 
       // Sort by frequency descending so top words appear first visually
       const sorted = [...newWords].sort((a, b) => (b.frequency ?? 0) - (a.frequency ?? 0));
@@ -54,6 +68,7 @@ function IntakeContent() {
   };
 
   const handleFinish = async () => {
+    if (saving) return;
     const learnWords: string[] = [];
     const knownWords: string[] = [];
 
@@ -62,14 +77,22 @@ function IntakeContent() {
       else if (action === "known") knownWords.push(wordId);
     });
 
-    if (learnWords.length > 0) {
-      await addWordsToBank(learnWords, WordStatus.IN_BANK, surahNumber);
+    setSaving(true);
+    setSaveError("");
+    try {
+      if (learnWords.length > 0) {
+        await addWordsToBank(learnWords, WordStatus.IN_BANK, surahNumber);
+      }
+      if (knownWords.length > 0) {
+        await addWordsToBank(knownWords, WordStatus.KNOWN_NOT_IN_BANK, surahNumber);
+      }
+      router.push("/train/flashcards");
+    } catch (error) {
+      console.error("Failed to add words:", error);
+      // Adding is idempotent (words already in the deck are skipped), so it is safe to retry.
+      setSaveError(error instanceof SessionExpiredError ? error.message : "Some words could not be saved. Please try again.");
+      setSaving(false);
     }
-    if (knownWords.length > 0) {
-      await addWordsToBank(knownWords, WordStatus.KNOWN_NOT_IN_BANK, surahNumber);
-    }
-
-    router.push("/train/flashcards");
   };
 
   const filteredWords = words.filter(
@@ -90,6 +113,14 @@ function IntakeContent() {
           <div className="mb-4 h-12 w-12 animate-spin rounded-full border-4 border-emerald-500 border-t-transparent"></div>
           <p className="text-gray-400">Loading words...</p>
         </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-950 px-4">
+        <p role="alert" className="max-w-md text-center text-gray-300">{loadError}</p>
       </div>
     );
   }
@@ -211,13 +242,14 @@ function IntakeContent() {
             <span className="text-emerald-400">{learnCount} to learn</span>
             {" • "}
             <span className="text-green-400">{knownCount} known</span>
+            {saveError && <span role="alert" className="ml-3 text-red-400">{saveError}</span>}
           </div>
           <button
             onClick={handleFinish}
-            disabled={learnCount === 0 && knownCount === 0}
+            disabled={saving || (learnCount === 0 && knownCount === 0)}
             className="rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 px-6 py-3 font-semibold text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl disabled:opacity-50 disabled:hover:scale-100"
           >
-            Finish Selection
+            {saving ? "Saving..." : "Finish Selection"}
           </button>
         </div>
       </div>
